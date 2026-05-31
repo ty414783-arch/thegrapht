@@ -1,0 +1,9 @@
+node_modules
+**/node_modules
+.git
+.DS_Store
+npm-debug.log*
+*.log
+apps/backend/.env
+apps/frontend/.env
+apps/mtproto/.env

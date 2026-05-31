@@ -1,0 +1,68 @@
+{
+  "name": "thegrapht-desktop",
+  "version": "0.2.28",
+  "private": true,
+  "description": "TheGrapht native desktop client (Electron + React + Vite)",
+  "main": "main.js",
+  "scripts": {
+    "init-frontend": "vite",
+    "start": "electron .",
+    "dev": "concurrently -k \"vite\" \"wait-on tcp:5173 && electron .\"",
+    "build:renderer": "node build-frontend.mjs",
+    "dist": "npm run build:renderer && electron-builder --win nsis --x64",
+    "dist:nsis": "npm run build:renderer && electron-builder --win nsis --x64",
+    "dist:portable": "npm run build:renderer && electron-builder --win portable --x64"
+  },
+  "dependencies": {
+    "@tauri-apps/api": "^2.11.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2.11.2",
+    "@vitejs/plugin-react": "^4.5.0",
+    "concurrently": "^9.1.2",
+    "electron": "^31.0.0",
+    "electron-builder": "^24.13.3",
+    "vite": "^5.4.11",
+    "wait-on": "^8.0.3"
+  },
+  "build": {
+    "appId": "su.thegrapht.desktop",
+    "productName": "TheGraphT",
+    "asar": true,
+    "directories": {
+      "output": "dist"
+    },
+    "icon": "icon.png",
+    "files": [
+      "main.js",
+      "preload.js",
+      "package.json",
+      "icon.png",
+      "icon.ico",
+      "dist/renderer/**/*"
+    ],
+    "win": {
+      "icon": "icon.ico",
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "artifactName": "TheGrapht-Setup-${version}.${ext}"
+    },
+    "portable": {
+      "artifactName": "TheGrapht-Portable-${version}.${ext}"
+    },
+    "publish": [
+      {
+        "provider": "generic",
+        "url": "https://web.thegrapht.su/download/release/desktop"
+      }
+    ]
+  }
+}

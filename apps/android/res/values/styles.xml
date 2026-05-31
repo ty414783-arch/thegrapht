@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <style name="Theme.TheGrapht" parent="@android:style/Theme.Material.NoActionBar">
+        <item name="android:windowBackground">@color/tg_bg</item>
+        <item name="android:statusBarColor">@color/tg_bg</item>
+        <item name="android:navigationBarColor">@color/tg_bg</item>
+        <item name="android:textColorPrimary">@color/tg_text</item>
+        <item name="android:textColorSecondary">@color/tg_text_muted</item>
+        <item name="android:windowContentTransitions">true</item>
+    </style>
+
+    <style name="Theme.TheGrapht.Splash" parent="@android:style/Theme.Material.NoActionBar.Fullscreen">
+        <item name="android:windowBackground">@color/tg_bg</item>
+        <item name="android:statusBarColor">@color/tg_bg</item>
+        <item name="android:navigationBarColor">@color/tg_bg</item>
+    </style>
+</resources>

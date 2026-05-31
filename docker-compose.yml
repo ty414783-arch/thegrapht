@@ -1,0 +1,146 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-thegrapht}
+      POSTGRES_USER: ${POSTGRES_USER:-thegrapht}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-thegrapht} -d ${POSTGRES_DB:-thegrapht}"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+  frontend:
+    build:
+      context: .
+      dockerfile: apps/frontend/Dockerfile
+    restart: unless-stopped
+    volumes:
+      - ./apps/frontend:/app/apps/frontend
+      - ./res:/app/res
+    # Убираем ограничения для стабильности
+    environment:
+      HOST: 0.0.0.0
+      PORT: 5173
+      # Keep these empty by default so the public web app uses same-origin
+      # routing on web.thegrapht.su through nginx: /api, /ws, /mtproto.
+      VITE_API_BASE_URL: ${VITE_API_BASE_URL:-}
+      VITE_WS_BASE_URL: ${VITE_WS_BASE_URL:-}
+      VITE_MTPROTO_BASE_URL: ${VITE_MTPROTO_BASE_URL:-}
+      # ICE config with self-hosted STUN/TURN only (no external DNS dependency).
+      # TURN creds are visible in browser by design; for production, rotate regularly.
+      VITE_WEBRTC_ICE_SERVERS: "[{\"urls\":[\"stun:${TURN_PUBLIC_HOST}:3478\"]},{\"urls\":[\"turn:${TURN_PUBLIC_HOST}:3478?transport=udp\",\"turn:${TURN_PUBLIC_HOST}:3478?transport=tcp\"],\"username\":\"${TURN_USERNAME}\",\"credential\":\"${TURN_PASSWORD}\"}]"
+    ports:
+      - "127.0.0.1:5175:5173"
+    depends_on:
+      - backend
+      - mtproto
+      - turn
+
+  backend:
+    build:
+      context: .
+      dockerfile: apps/backend/Dockerfile
+    restart: unless-stopped
+    volumes:
+      - backend_logs:/app/logs
+      - /root/thegrapht-data/uploads:/app/uploads
+    ports:
+      - "127.0.0.1:3001:3000"
+    environment:
+      PORT: 3000
+      HOST: 0.0.0.0
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: 5432
+      POSTGRES_DB: ${POSTGRES_DB:-thegrapht}
+      POSTGRES_USER: ${POSTGRES_USER:-thegrapht}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_SSLMODE: disable
+      JWT_SECRET: ${JWT_SECRET}
+      JWT_EXPIRES_IN: 30d
+      SESSION_COOKIE_NAME: thegrapht_session
+      SESSION_COOKIE_DOMAIN: ${SESSION_COOKIE_DOMAIN:-}
+      UPLOADS_DIR: /app/uploads
+      ENABLE_INFRA_CHECKS: "false"
+      RUN_MIGRATIONS_ON_BOOT: "true"
+      SEED_DATABASE_ON_BOOT: "true"
+      LOG_FILE: "" # Пустая строка заставит pino писать в консоль
+      CORS_ALLOWED_ORIGINS: "https://thegrapht.su,https://web.thegrapht.su,http://localhost:5173,http://127.0.0.1:5173,http://localhost:5175,http://127.0.0.1:5175"
+      SECURE_DIRECT_CHATS_ENABLED: "true"
+      SMTP_HOST: postfix
+      SMTP_PORT: 25
+      SMTP_SECURE: "false"
+      SMTP_FROM: noreply@thegrapht.su
+      RATE_LIMIT_AUTH_WINDOW_MS: 3000
+      RATE_LIMIT_AUTH_MAX: 5
+      RATE_LIMIT_MESSAGE_WINDOW_MS: 3000
+      RATE_LIMIT_MESSAGE_MAX: 100
+      RATE_LIMIT_SEARCH_WINDOW_MS: 3000
+      RATE_LIMIT_SEARCH_MAX: 100
+      RATE_LIMIT_GENERAL_WINDOW_MS: 3000
+      RATE_LIMIT_GENERAL_MAX: 1000
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN}
+      GEMINI_API_KEY: ${GEMINI_API_KEY}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      postfix:
+        condition: service_started
+
+  mtproto:
+    build:
+      context: .
+      dockerfile: apps/mtproto/Dockerfile
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:3100:3100"
+    environment:
+      PORT: 3100
+      HOST: 0.0.0.0
+      JWT_SECRET: ${JWT_SECRET}
+      CORS_ALLOWED_ORIGINS: "https://thegrapht.su,https://web.thegrapht.su,http://localhost:5173,http://127.0.0.1:5173,http://localhost:5175,http://127.0.0.1:5175"
+      MTPROTO_MAX_JSON_BODY_BYTES: "65536"
+      MTPROTO_MAX_FRAME_BYTES: "1048576"
+      MTPROTO_SESSION_TTL_MS: "1200000"
+      MTPROTO_CHALLENGE_TTL_MS: "90000"
+      MTPROTO_REQUEST_BODY_TIMEOUT_MS: "25000"
+      MTPROTO_KEEPALIVE_TIMEOUT_MS: "65000"
+      MTPROTO_HEADERS_TIMEOUT_MS: "70000"
+
+  turn:
+    image: coturn/coturn:4.6.3
+    restart: unless-stopped
+    command:
+      - "-n"
+      - "--log-file=stdout"
+      - "--fingerprint"
+      - "--realm=${TURN_REALM}"
+      - "--lt-cred-mech"
+      - "--user=${TURN_USERNAME}:${TURN_PASSWORD}"
+      - "--listening-ip=0.0.0.0"
+      - "--listening-port=3478"
+      - "--min-port=55000"
+      - "--max-port=55100"
+      - "--no-cli"
+    ports:
+      - "3478:3478/tcp"
+      - "3478:3478/udp"
+      - "5349:5349/tcp"
+      - "5349:5349/udp"
+      - "55000-55100:55000-55100/tcp"
+      - "55000-55100:55000-55100/udp"
+
+  postfix:
+    image: mwader/postfix-relay:latest
+    restart: unless-stopped
+    environment:
+      - POSTFIX_myhostname=thegrapht.su
+      - POSTFIX_mynetworks=127.0.0.0/8,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16
+
+volumes:
+  backend_logs:
+  postgres_data:

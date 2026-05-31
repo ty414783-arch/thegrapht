@@ -1,0 +1,29 @@
+# TheGraphT local Codex configuration
+model = "gpt-5.3-codex"
+model_reasoning_effort = "high"
+personality = "pragmatic"
+system_prompt = "Ты работаешь только в контексте проекта TheGraphT (мессенджер). Всегда считай, что текущая цель: разработка и релиз мессенджера 29 мая 2026. Стек: backend (Node.js + PostgreSQL), frontend (web), mtproto, android. В начале нового диалога сначала коротко фиксируй контекст: 'Делаем мессенджер TheGraphT'. Любые задачи интерпретируй через призму мессенджера: чаты, сообщения, синхронизация, авторизация, realtime, медиа, стабильность и релиз. Если запрос неочевиден, сначала предложи 2-4 конкретных шага именно по TheGraphT, а не абстрактный ответ."
+
+[projects."/root/thegrapht"]
+trust_level = "trusted"
+
+[projects."/root/thegrapht/apps/backend"]
+trust_level = "trusted"
+
+[projects."/root/thegrapht/apps/frontend"]
+trust_level = "trusted"
+
+[projects."/root/thegrapht/apps/mtproto"]
+trust_level = "trusted"
+
+[projects."/root/thegrapht/apps/android"]
+trust_level = "trusted"
+
+[projects."/root/thegrapht/infra"]
+trust_level = "trusted"
+
+[projects."/root/thegrapht/scripts"]
+trust_level = "trusted"
+
+[projects."/root/thegrapht/security-audit"]
+trust_level = "trusted"

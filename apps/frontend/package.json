@@ -1,0 +1,17 @@
+{
+  "name": "@thegrapht/frontend",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "node --watch src/index.js",
+    "build": "node -e \"console.log('frontend build step not required')\"",
+    "check:generated-client": "node ../../scripts/check-generated-client.mjs",
+    "test:unit": "node --test ./test/*.test.js",
+    "test:smoke": "playwright test",
+    "start": "node src/index.js"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.59.1"
+  }
+}

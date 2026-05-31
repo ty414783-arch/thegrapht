@@ -1,0 +1,217 @@
+<?xml version="1.0" encoding="utf-8"?>
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@drawable/bg_screen">
+
+    <ScrollView
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:fillViewport="true">
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:gravity="center_horizontal"
+            android:orientation="vertical"
+            android:paddingLeft="20dp"
+            android:paddingTop="42dp"
+            android:paddingRight="20dp"
+            android:paddingBottom="28dp">
+
+            <su.thegrapht.app.CircleImageView
+                android:layout_width="86dp"
+                android:layout_height="86dp"
+                android:src="@drawable/thegrapht_logo"
+                android:scaleType="centerCrop" />
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="14dp"
+                android:text="TheGrapht"
+                android:textColor="@color/tg_text"
+                android:textSize="32sp"
+                android:textStyle="bold" />
+
+            <LinearLayout
+                android:id="@+id/authCard"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="22dp"
+                android:background="@drawable/bg_card"
+                android:orientation="vertical"
+                android:padding="20dp"
+                android:visibility="visible">
+
+                <TextView
+                    android:id="@+id/authTitle"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="Войти"
+                    android:textColor="@color/tg_text"
+                    android:textSize="28sp"
+                    android:textStyle="bold" />
+
+                <TextView
+                    android:id="@+id/authSubtitle"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="6dp"
+                    android:text="Войдите в свой аккаунт TheGrapht."
+                    android:textColor="@color/tg_text_muted"
+                    android:textSize="15sp" />
+
+                <EditText
+                    android:id="@+id/nameInput"
+                    android:layout_width="match_parent"
+                    android:layout_height="52dp"
+                    android:layout_marginTop="18dp"
+                    android:background="@drawable/bg_input"
+                    android:hint="Имя"
+                    android:paddingLeft="16dp"
+                    android:paddingRight="16dp"
+                    android:textColor="@color/tg_text"
+                    android:textColorHint="@color/tg_text_muted"
+                    android:visibility="gone" />
+
+                <EditText
+                    android:id="@+id/emailInput"
+                    android:layout_width="match_parent"
+                    android:layout_height="52dp"
+                    android:layout_marginTop="12dp"
+                    android:background="@drawable/bg_input"
+                    android:hint="Почта"
+                    android:inputType="textEmailAddress"
+                    android:paddingLeft="16dp"
+                    android:paddingRight="16dp"
+                    android:textColor="@color/tg_text"
+                    android:textColorHint="@color/tg_text_muted" />
+
+                <EditText
+                    android:id="@+id/passwordInput"
+                    android:layout_width="match_parent"
+                    android:layout_height="52dp"
+                    android:layout_marginTop="12dp"
+                    android:background="@drawable/bg_input"
+                    android:hint="Пароль"
+                    android:inputType="textPassword"
+                    android:paddingLeft="16dp"
+                    android:paddingRight="16dp"
+                    android:textColor="@color/tg_text"
+                    android:textColorHint="@color/tg_text_muted" />
+
+                <su.thegrapht.app.SparkleButton
+                    android:id="@+id/authSubmit"
+                    android:layout_width="match_parent"
+                    android:layout_height="54dp"
+                    android:layout_marginTop="16dp"
+                    android:background="@drawable/bg_button_primary"
+                    android:text="Войти"
+                    android:textAllCaps="false"
+                    android:textColor="@color/tg_white"
+                    android:textSize="17sp"
+                    android:textStyle="bold" />
+
+                <TextView
+                    android:id="@+id/authStatus"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="12dp"
+                    android:minHeight="22dp"
+                    android:textColor="@color/tg_danger"
+                    android:textSize="14sp" />
+
+                <Button
+                    android:id="@+id/authToggle"
+                    android:layout_width="match_parent"
+                    android:layout_height="48dp"
+                    android:layout_marginTop="10dp"
+                    android:background="@drawable/bg_button_subtle"
+                    android:text="Создать аккаунт"
+                    android:textAllCaps="false"
+                    android:textColor="@color/tg_text"
+                    android:textSize="16sp" />
+            </LinearLayout>
+
+            <LinearLayout
+                android:id="@+id/verifyCard"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="22dp"
+                android:background="@drawable/bg_card"
+                android:orientation="vertical"
+                android:padding="20dp"
+                android:visibility="gone">
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="Подтверждение"
+                    android:textColor="@color/tg_text"
+                    android:textSize="28sp"
+                    android:textStyle="bold" />
+
+                <TextView
+                    android:id="@+id/verifySubtitle"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="6dp"
+                    android:text="Мы отправили 6-значный код подтверждения через Telegram. Запустите @thegrapht_verification_bot"
+                    android:textColor="@color/tg_text_muted"
+                    android:textSize="15sp" />
+
+                <EditText
+                    android:id="@+id/codeInput"
+                    android:layout_width="match_parent"
+                    android:layout_height="52dp"
+                    android:layout_marginTop="18dp"
+                    android:background="@drawable/bg_input"
+                    android:hint="Код подтверждения"
+                    android:inputType="number"
+                    android:paddingLeft="16dp"
+                    android:paddingRight="16dp"
+                    android:maxLength="6"
+                    android:gravity="center"
+                    android:textSize="22sp"
+                    android:textStyle="bold"
+                    android:textColor="@color/tg_text"
+                    android:textColorHint="@color/tg_text_muted" />
+
+                <su.thegrapht.app.SparkleButton
+                    android:id="@+id/verifySubmit"
+                    android:layout_width="match_parent"
+                    android:layout_height="54dp"
+                    android:layout_marginTop="16dp"
+                    android:background="@drawable/bg_button_primary"
+                    android:text="Подтвердить"
+                    android:textAllCaps="false"
+                    android:textColor="@color/tg_white"
+                    android:textSize="17sp"
+                    android:textStyle="bold" />
+
+                <TextView
+                    android:id="@+id/verifyStatus"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="12dp"
+                    android:minHeight="22dp"
+                    android:textColor="@color/tg_danger"
+                    android:textSize="14sp" />
+
+                <su.thegrapht.app.SparkleButton
+                    android:id="@+id/verifyResend"
+                    android:layout_width="match_parent"
+                    android:layout_height="48dp"
+                    android:layout_marginTop="10dp"
+                    android:background="@drawable/bg_button_subtle"
+                    android:text="Отправить код повторно"
+                    android:textAllCaps="false"
+                    android:textColor="@color/tg_text"
+                    android:textSize="16sp" />
+            </LinearLayout>
+
+        </LinearLayout>
+    </ScrollView>
+
+</FrameLayout>

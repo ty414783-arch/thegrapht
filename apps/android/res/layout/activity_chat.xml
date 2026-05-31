@@ -1,0 +1,195 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@drawable/tg_wallpaper"
+    android:orientation="vertical">
+
+    <!-- Premium White Action Bar -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:background="@color/tg_white"
+        android:gravity="center_vertical"
+        android:minHeight="60dp"
+        android:orientation="horizontal"
+        android:paddingLeft="12dp"
+        android:paddingTop="8dp"
+        android:paddingRight="12dp"
+        android:paddingBottom="8dp"
+        android:elevation="4dp">
+
+        <TextView
+            android:id="@+id/chatBack"
+            android:layout_width="36dp"
+            android:layout_height="36dp"
+            android:gravity="center"
+            android:text="‹"
+            android:textColor="#2E79C9"
+            android:textSize="32sp"
+            android:textStyle="bold"
+            android:clickable="true"
+            android:focusable="true"/>
+
+        <LinearLayout
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_marginLeft="8dp"
+            android:layout_weight="1"
+            android:orientation="vertical">
+
+            <TextView
+                android:id="@+id/chatTitle"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:textColor="#1F1F1F"
+                android:textSize="17sp"
+                android:textStyle="bold" />
+
+            <TextView
+                android:id="@+id/chatSubtitle"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="2dp"
+                android:textColor="#6E7C8B"
+                android:textSize="12sp" />
+        </LinearLayout>
+
+        <TextView
+            android:id="@+id/chatSearchButton"
+            android:layout_width="38dp"
+            android:layout_height="38dp"
+            android:background="@drawable/bg_tab_inactive"
+            android:gravity="center"
+            android:text="⌕"
+            android:textColor="#2E79C9"
+            android:textSize="20sp" />
+
+        <TextView
+            android:id="@+id/chatCallButton"
+            android:layout_width="38dp"
+            android:layout_height="38dp"
+            android:layout_marginLeft="8dp"
+            android:background="@drawable/bg_tab_inactive"
+            android:gravity="center"
+            android:text="☎"
+            android:textColor="#2E79C9"
+            android:textSize="18sp" />
+    </LinearLayout>
+
+    <LinearLayout
+        android:id="@+id/chatSearchPanel"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:background="#F1F5F9"
+        android:gravity="center_vertical"
+        android:orientation="horizontal"
+        android:paddingLeft="12dp"
+        android:paddingTop="8dp"
+        android:paddingRight="12dp"
+        android:paddingBottom="8dp">
+
+        <EditText
+            android:id="@+id/chatSearchInput"
+            android:layout_width="0dp"
+            android:layout_height="38dp"
+            android:layout_weight="1"
+            android:background="@android:color/transparent"
+            android:hint="Поиск по сообщениям"
+            android:paddingLeft="8dp"
+            android:paddingRight="8dp"
+            android:textColor="#1F1F1F"
+            android:textColorHint="#94A3B8"
+            android:textSize="14sp" />
+
+        <TextView
+            android:id="@+id/chatSearchCount"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginLeft="8dp"
+            android:textColor="#6E7C8B"
+            android:textSize="13sp" />
+
+        <TextView
+            android:id="@+id/chatSearchClose"
+            android:layout_width="34dp"
+            android:layout_height="34dp"
+            android:layout_marginLeft="8dp"
+            android:background="@drawable/bg_tab_badge_inactive"
+            android:gravity="center"
+            android:text="✕"
+            android:textColor="#6E7C8B"
+            android:textSize="14sp" />
+    </LinearLayout>
+
+    <ScrollView
+        android:id="@+id/chatScroll"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:fillViewport="true"
+        android:overScrollMode="ifContentScrolls"
+        android:scrollbars="none">
+
+        <LinearLayout
+            android:id="@+id/chatMessages"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:gravity="bottom"
+            android:orientation="vertical"
+            android:paddingLeft="12dp"
+            android:paddingRight="12dp"
+            android:paddingBottom="12dp" />
+    </ScrollView>
+
+    <!-- Premium Message Composer Footer -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:background="@color/tg_white"
+        android:gravity="center_vertical"
+        android:orientation="horizontal"
+        android:paddingLeft="10dp"
+        android:paddingTop="8dp"
+        android:paddingRight="10dp"
+        android:paddingBottom="8dp"
+        android:elevation="8dp">
+
+        <TextView
+            android:id="@+id/chatAttachButton"
+            android:layout_width="38dp"
+            android:layout_height="38dp"
+            android:layout_marginRight="8dp"
+            android:background="@drawable/bg_tab_inactive"
+            android:gravity="center"
+            android:text="⌁"
+            android:textColor="#2E79C9"
+            android:textSize="22sp" />
+
+        <EditText
+            android:id="@+id/chatComposerInput"
+            android:layout_width="0dp"
+            android:layout_height="40dp"
+            android:layout_weight="1"
+            android:background="@drawable/bg_input_tg"
+            android:hint="Сообщение"
+            android:paddingLeft="14dp"
+            android:paddingRight="14dp"
+            android:textColor="#1F1F1F"
+            android:textColorHint="#94A3B8"
+            android:textSize="15sp"
+            android:maxLines="4"/>
+
+        <Button
+            android:id="@+id/chatSendButton"
+            android:layout_width="40dp"
+            android:layout_height="40dp"
+            android:layout_marginLeft="8dp"
+            android:background="@drawable/bg_tab_active"
+            android:text="➤"
+            android:textAllCaps="false"
+            android:textColor="@color/tg_white"
+            android:textSize="16sp" />
+    </LinearLayout>
+
+</LinearLayout>

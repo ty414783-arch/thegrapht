@@ -1,0 +1,14 @@
+ALTER TABLE messages
+  ADD COLUMN IF NOT EXISTS type TEXT NOT NULL DEFAULT 'text';
+
+ALTER TABLE messages
+  ADD COLUMN IF NOT EXISTS attachment_path TEXT;
+
+ALTER TABLE messages
+  ADD COLUMN IF NOT EXISTS attachment_mime TEXT;
+
+ALTER TABLE messages
+  ADD COLUMN IF NOT EXISTS attachment_name TEXT;
+
+ALTER TABLE messages
+  ADD COLUMN IF NOT EXISTS attachment_size INTEGER;

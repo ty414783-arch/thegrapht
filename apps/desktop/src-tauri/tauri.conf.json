@@ -1,0 +1,44 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "thegrapht",
+  "version": "0.2.23",
+  "identifier": "su.thegrapht.desktop",
+  "build": {
+    "frontendDist": "../dist/renderer",
+    "devUrl": "http://localhost:5173",
+    "beforeDevCommand": "/root/.local/node-v20.18.2-linux-x64/bin/npm run init-frontend",
+    "beforeBuildCommand": "/root/.local/node-v20.18.2-linux-x64/bin/node build-frontend.mjs"
+  },
+  "app": {
+    "withGlobalTauri": true,
+    "windows": [
+      {
+        "title": "TheGraphT",
+        "width": 1420,
+        "height": 920,
+        "minWidth": 1000,
+        "minHeight": 650,
+        "resizable": true,
+        "fullscreen": false,
+        "decorations": false
+      }
+    ],
+    "security": {
+      "csp": null
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ],
+    "android": {
+      "debugApplicationIdSuffix": ".debug"
+    }
+  }
+}

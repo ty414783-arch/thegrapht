@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">TheGrapht</string>
+    <string name="base_url">https://web.thegrapht.su</string>
+    <string name="status_online">в сети</string>
+    <string name="status_connecting">подключение…</string>
+</resources>

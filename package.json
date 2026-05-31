@@ -1,0 +1,18 @@
+{
+  "name": "thegrapht",
+  "private": true,
+  "workspaces": [
+    "apps/backend",
+    "apps/frontend",
+    "apps/mtproto"
+  ],
+  "scripts": {
+    "check": "npm --workspace apps/backend test && npm --workspace apps/frontend run check:generated-client && npm --workspace apps/frontend run test:unit && npm --workspace apps/mtproto test",
+    "check:docker": "docker build --target test -f apps/backend/Dockerfile .",
+    "dev:backend": "npm --workspace apps/backend run dev",
+    "dev:frontend": "npm --workspace apps/frontend run dev -- --host 0.0.0.0",
+    "dev:mtproto": "npm --workspace apps/mtproto run dev",
+    "build": "npm run build --workspaces",
+    "start": "npm run start --workspaces"
+  }
+}

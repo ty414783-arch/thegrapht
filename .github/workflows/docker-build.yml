@@ -1,0 +1,46 @@
+name: Docker Build Check
+
+on:
+  push:
+    branches:
+      - main
+      - master
+  pull_request:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Prepare environment
+        run: cp .env.example .env
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run canonical checks
+        run: npm run check
+
+      - name: Validate Compose config
+        run: docker compose -f docker-compose.yml config
+
+      - name: Build backend test target
+        run: docker build --target test -f apps/backend/Dockerfile .
+
+      - name: Build backend image
+        run: docker build -f apps/backend/Dockerfile .
+
+      - name: Build frontend image
+        run: docker build -f apps/frontend/Dockerfile .
+
+      - name: Build MTProto image
+        run: docker build -f apps/mtproto/Dockerfile .

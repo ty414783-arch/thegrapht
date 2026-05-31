@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="tg_bg">#131821</color>
+    <color name="tg_panel">#1C222E</color>
+    <color name="tg_panel_soft">#232936</color>
+    <color name="tg_border">#263140</color>
+    <color name="tg_text">#F4F7FF</color>
+    <color name="tg_text_muted">#92A0B4</color>
+    <color name="tg_primary">#6F63F6</color>
+    <color name="tg_primary_alt">#5D8EFF</color>
+    <color name="tg_success">#57D96A</color>
+    <color name="tg_danger">#FF667C</color>
+    <color name="tg_incoming">#252D39</color>
+    <color name="tg_shadow">#66000000</color>
+    <color name="tg_overlay">#E610141B</color>
+    <color name="tg_white">#FFFFFF</color>
+    <color name="tg_black">#000000</color>
+</resources>
