@@ -221,4 +221,17 @@ export const realtimeSignaling = () => `
         }));
       };
 
+      const sendActiveState = (isActive) => {
+        if (!realtimeSocket || realtimeSocket.readyState !== WebSocket.OPEN) {
+          return;
+        }
+        try {
+          realtimeSocket.send(JSON.stringify({
+            type: "active_state",
+            isActive: Boolean(isActive)
+          }));
+        } catch {}
+      };
+      window.sendActiveState = sendActiveState;
+
 `;

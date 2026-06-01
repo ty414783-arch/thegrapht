@@ -1535,12 +1535,24 @@ export const sidebarClientChunk = `      const setStatus = (message, type) => {
         refreshNotificationOwnership();
         refreshPrimaryTabOwnership();
         scheduleBackgroundRefresh();
+        if (typeof sendActiveState === "function") {
+          sendActiveState(true);
+        }
+      });
+
+      window.addEventListener("blur", () => {
+        if (typeof sendActiveState === "function") {
+          sendActiveState(false);
+        }
       });
 
       document.addEventListener("visibilitychange", () => {
         refreshNotificationOwnership();
         refreshPrimaryTabOwnership();
         scheduleBackgroundRefresh();
+        if (typeof sendActiveState === "function") {
+          sendActiveState(document.visibilityState === "visible");
+        }
       });
 
       window.addEventListener("storage", (event) => {

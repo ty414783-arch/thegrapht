@@ -7013,37 +7013,47 @@ ${composerStyles}
       }
       .toast-stack {
         position: fixed;
-        right: 22px;
-        bottom: 22px;
-        z-index: 40;
+        right: 24px;
+        bottom: 24px;
+        z-index: 10000;
         display: grid;
-        gap: 10px;
-        width: min(340px, calc(100vw - 32px));
+        gap: 8px;
+        width: min(320px, calc(100vw - 32px));
       }
       .toast {
-        padding: 14px 16px;
-        border-radius: 18px;
-        border: 1px solid rgba(255,255,255,0.08);
-        background: rgba(16, 20, 27, 0.96);
-        color: #eef2fb;
-        box-shadow: 0 18px 36px rgba(0,0,0,0.28);
-        font-size: 14px;
-        line-height: 1.45;
-        animation: toastIn 0.22s ease both;
+        padding: 12px 18px;
+        border-radius: 12px;
+        border: 1px solid rgba(255, 255, 255, 0.06);
+        border-left: 4px solid rgba(255, 255, 255, 0.3);
+        background: rgba(18, 22, 30, 0.85);
+        backdrop-filter: blur(16px);
+        -webkit-backdrop-filter: blur(16px);
+        color: #f1f5f9;
+        box-shadow: 0 12px 28px rgba(0, 0, 0, 0.35);
+        font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+        font-size: 13.5px;
+        font-weight: 500;
+        line-height: 1.4;
+        letter-spacing: -0.01em;
+        animation: toastIn 0.25s cubic-bezier(0.16, 1, 0.3, 1) both;
+        transition: opacity 0.18s ease, transform 0.18s ease;
       }
       .toast.success {
-        border-color: rgba(117, 226, 165, 0.24);
+        border-left-color: #34c759;
+        background: rgba(18, 26, 21, 0.85);
       }
       .toast.error {
-        border-color: rgba(255, 116, 126, 0.24);
+        border-left-color: #ff3b30;
+        background: rgba(28, 20, 20, 0.85);
       }
       .toast.info {
-        border-color: rgba(121, 169, 255, 0.24);
+        border-left-color: #007aff;
+        background: rgba(18, 22, 30, 0.85);
       }
       @keyframes toastIn {
         from {
           opacity: 0;
-          transform: translateY(10px) scale(0.98);
+          transform: translateY(12px) scale(0.96);
         }
         to {
           opacity: 1;

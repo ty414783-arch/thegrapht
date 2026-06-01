@@ -32,6 +32,7 @@ export const createRealtimeHub = ({
   const activeDialogUsers = new Map();
   const connectedUsers = new Map();
   const postedCallSummaryKeys = new Map();
+  const socketActiveStates = new Map();
 
   const sendRealtimeEvent = (userId, event) => {
     const sockets = realtimeClients.get(userId);
@@ -85,7 +86,22 @@ export const createRealtimeHub = ({
     return true;
   };
 
-  const isUserOnline = (userId) => (connectedUsers.get(userId) || 0) > 0;
+  const isUserOnline = (userId) => {
+    const isConnected = (connectedUsers.get(userId) || 0) > 0;
+    if (!isConnected) {
+      return false;
+    }
+    const sockets = realtimeClients.get(userId);
+    if (!sockets || sockets.size === 0) {
+      return false;
+    }
+    for (const socket of sockets) {
+      if (socketActiveStates.get(socket) !== false) {
+        return true;
+      }
+    }
+    return false;
+  };
 
   const decrementDialogPresence = (dialogId, userId) => {
     const dialogMap = activeDialogUsers.get(dialogId);
@@ -431,9 +447,34 @@ export const createRealtimeHub = ({
         });
       }
 
-      socket.on("message", (data) => {
+      socket.on("message", async (data) => {
         try {
           const payload = JSON.parse(data.toString("utf8"));
+
+          if (payload.type === "active_state") {
+            const isActive = Boolean(payload.isActive);
+            const wasOnlineBefore = isUserOnline(user.id);
+            socketActiveStates.set(socket, isActive);
+            const isOnlineNow = isUserOnline(user.id);
+
+            if (wasOnlineBefore !== isOnlineNow) {
+              if (!isOnlineNow) {
+                const touchedUser = await touchUserLastSeen(user.id);
+                await broadcastUserPresence({
+                  userId: user.id,
+                  isOnline: false,
+                  lastSeenAt: touchedUser?.lastSeenAt || new Date().toISOString()
+                });
+              } else {
+                await broadcastUserPresence({
+                  userId: user.id,
+                  isOnline: true,
+                  lastSeenAt: new Date().toISOString()
+                });
+              }
+            }
+            return;
+          }
 
           if (payload.type === "presence") {
             const nextDialogId = typeof payload.dialogId === "string" && payload.dialogId ? payload.dialogId : null;
@@ -496,6 +537,9 @@ export const createRealtimeHub = ({
           return;
         }
 
+        const wasOnlineBefore = isUserOnline(user.id);
+        socketActiveStates.delete(socket);
+
         const userSockets = realtimeClients.get(user.id);
 
         if (currentPresence.dialogId) {
@@ -513,9 +557,10 @@ export const createRealtimeHub = ({
           }
         }
 
-        const wentOffline = decrementConnectedUser(user.id);
+        decrementConnectedUser(user.id);
+        const isOnlineNow = isUserOnline(user.id);
 
-        if (wentOffline) {
+        if (wasOnlineBefore && !isOnlineNow) {
           void (async () => {
             const touchedUser = await touchUserLastSeen(user.id);
 

@@ -45,6 +45,9 @@ export const realtimeConnection = ({ wsBaseUrl, logoDataUrl }) => `
           touchRealtimeActivity();
           startRealtimeHealthChecks();
           sendCurrentPresence();
+          if (typeof sendActiveState === "function") {
+            sendActiveState(document.visibilityState === "visible");
+          }
           if (isFirstRealtimeConnection) {
             isFirstRealtimeConnection = false;
             wsInfo("ws_open_initial_skip_reconcile");

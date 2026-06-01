@@ -10070,6 +10070,19 @@
         }));
       };
 
+      const sendActiveState = (isActive) => {
+        if (!realtimeSocket || realtimeSocket.readyState !== WebSocket.OPEN) {
+          return;
+        }
+        try {
+          realtimeSocket.send(JSON.stringify({
+            type: "active_state",
+            isActive: Boolean(isActive)
+          }));
+        } catch {}
+      };
+      window.sendActiveState = sendActiveState;
+
 
 
 
@@ -12725,6 +12738,9 @@
           touchRealtimeActivity();
           startRealtimeHealthChecks();
           sendCurrentPresence();
+          if (typeof sendActiveState === "function") {
+            sendActiveState(document.visibilityState === "visible");
+          }
           if (isFirstRealtimeConnection) {
             isFirstRealtimeConnection = false;
             wsInfo("ws_open_initial_skip_reconcile");
@@ -14533,12 +14549,24 @@
         refreshNotificationOwnership();
         refreshPrimaryTabOwnership();
         scheduleBackgroundRefresh();
+        if (typeof sendActiveState === "function") {
+          sendActiveState(true);
+        }
+      });
+
+      window.addEventListener("blur", () => {
+        if (typeof sendActiveState === "function") {
+          sendActiveState(false);
+        }
       });
 
       document.addEventListener("visibilitychange", () => {
         refreshNotificationOwnership();
         refreshPrimaryTabOwnership();
         scheduleBackgroundRefresh();
+        if (typeof sendActiveState === "function") {
+          sendActiveState(document.visibilityState === "visible");
+        }
       });
 
       window.addEventListener("storage", (event) => {
