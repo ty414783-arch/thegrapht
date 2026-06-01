@@ -8091,6 +8091,15 @@ ${composerStyles}
         align-items: center;
         gap: 18px;
         padding: 16px 24px;
+        cursor: pointer;
+        transition: background 0.16s ease;
+        user-select: none;
+      }
+      .sidebar-profile-info-row:hover {
+        background: rgba(255, 255, 255, 0.06);
+      }
+      .sidebar-profile-info-row:active {
+        background: rgba(255, 255, 255, 0.1);
       }
       .sidebar-profile-info-icon {
         font-size: 24px;

@@ -12262,6 +12262,27 @@
         openProfileLinkContextMenu(event, profileUrl);
       });
 
+      sidebarProfileUsernameRow?.addEventListener("click", async (event) => {
+        if (event.button === 2) {
+          return;
+        }
+        const rawUsername = String(currentUserUsername || "").trim();
+        if (!rawUsername) {
+          return;
+        }
+        const profileUrl = window.location.origin + "/@" + encodeURIComponent(rawUsername);
+        try {
+          if (navigator.clipboard?.writeText) {
+            await navigator.clipboard.writeText(profileUrl);
+          } else {
+            throw new Error("Clipboard API is not available");
+          }
+          showToast("Username link copied", "success");
+        } catch {
+          showToast("Failed to copy username link", "error");
+        }
+      });
+
       document.getElementById("chat-profile-notifications-btn")?.addEventListener("click", () => {
         if (currentDialogSnapshot?.type !== "group" || !currentDialogSnapshot?.publicId) {
           return;
