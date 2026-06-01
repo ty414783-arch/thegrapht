@@ -72,7 +72,7 @@ For local Docker, `docker-compose.yml` is self-contained: it brings up PostgreSQ
 
 ## Markdown map
 
-- `README.md`: architecture and day-0 runbook.
+- `README.md`: architecture, day-0 runbook, and GitHub repository workflow.
 - `RELEASE_2026-05-29.md`: release gates and deployment checklist.
 - `SECURITY_RELEASE_PLAN_2026-05-29.md`: security hardening scope and release-day DB cutover rules.
 - `HANDOVER_2026-05-04.md`: operational handover details and incident context.
@@ -148,5 +148,72 @@ Critical work that should be done before wider rollout:
 - **2026-05-10**: Direct chat URL migration compatibility: added canonical personal-chat routing to `/@username` with backward support for legacy `/-100...` links; route resolver now maps `@username` to existing direct/private/secret dialogs without creating duplicates, and UI route updates keep direct links human-readable while preserving stable dialog ids under the hood.
 - **2026-05-11**: Implemented dual-mode direct messaging: default personal dialogs are now Cloud chats (server-readable moderation/search/recovery model), while Secret chats are created only via explicit `Start Secret Chat` action in profile. Added mode clarity in UI (`Cloud chat` vs `Secret chat • End-to-end encrypted`), routed secret dialogs via stable public-id path (no `@username` collision), and blocked accidental secure-dialog creation by requiring explicit secure intent in backend API payload.
 - **2026-05-11**: Hardened Secret chat reliability: fixed key-envelope targeting bug during secure dialog bootstrap (creator/recipient envelopes now wrapped for correct recipients), moved secret dialog key persistence from `sessionStorage` to durable storage, and updated decrypt-failure placeholder to user-facing `Encrypted message unavailable on this device`.
-- **2026-05-22**: Native Android Client Overhaul: fixed the authentication 404 crash by routing `BASE_URL` to `https://web.thegrapht.su`, integrated hardware-accelerated `TransitionManager` layout transitions for fluid switching/resizing of the login card, and replaced custom touches with native M3-compliant `<ripple>` drawables and conforming bounds masks across all buttons and clickable views.
+- **2026-05-22**: Native Android Client Overhaul: fixed the authentication 404 crash by routing `BASE_URL` to `https://web.thegrapht.su`, integrated hardware-accelerated `TransitionManager` layout transitions for fluid switching/resizing of the login card, and replaced custom touches with native M3-compliant `<ripple>` drawables across all buttons and clickable views.
 
+## GitHub Repository & Git Workflow (Интеграция с GitHub)
+
+This repository is integrated with a private GitHub repository for development and safe deployment updates.
+
+### 1. Repository Info (Информация о репозитории)
+* **Remote Origin (SSH)**: `git@github.com:ty414783-arch/thegrapht.git`
+* **Default Branch**: `main`
+
+### 2. SSH Configuration (Настройка SSH)
+To authenticate securely without password prompts, the server uses a dedicated SSH key pair:
+* **Private Key Path**: `/root/.ssh/id_ed25519_github`
+* **SSH Config (`/root/.ssh/config`)**:
+  ```text
+  Host github.com
+    HostName github.com
+    User git
+    IdentityFile /root/.ssh/id_ed25519_github
+    IdentitiesOnly yes
+  ```
+
+### 3. Security & Anti-Leak Policy (Безопасность и защита от утечек)
+We enforce a strict security policy to guarantee that **no secrets, passwords, or environments are committed to GitHub**.
+* **Blocked Files** (configured in `.gitignore`):
+  * All environment files: `.env`, `.env.*` (except `.env.example`)
+  * Database files and state: `postgres-data/`, `redis-data/`, `*.db`, `*.sqlite`
+  * Certificates, private and public keys: `*.key`, `*.pem`, `*.pub`, `*.cert`
+  * Access logs and dynamic run files.
+* **Important**: Always verify `git status` before committing. If you create new private files/directories containing secrets, ensure they are added to `.gitignore`.
+
+### 4. Git Workflows & Essential Commands (Основные команды)
+
+#### Safe Deploy Updates (Обновление изменений на сервере)
+Whenever changes are made, follow these steps to commit and push them securely:
+```bash
+# Check modified files and untracked files
+git status
+
+# Add changes to staging
+git add .
+
+# Create a clear, meaningful commit message
+git commit -m "feat/fix: descriptive message"
+
+# Push securely to the main branch
+git push origin main
+```
+
+#### Safe Updates Retrieval (Получение обновлений из репозитория)
+To pull the latest changes from GitHub without breaking local modifications:
+```bash
+# Fetch and merge latest code
+git pull origin main
+```
+
+#### Disaster Recovery / Rollback (Откат изменений при сбоях)
+If a bad update breaks development:
+```bash
+# View recent commits and their hashes
+git log -n 5 --oneline
+
+# Soft rollback (undo commit, keep modified files in working directory)
+git reset --soft HEAD~1
+
+# Hard rollback (completely revert files to last committed state)
+# WARNING: This will discard all uncommitted changes!
+git reset --hard HEAD
+```
