@@ -7958,7 +7958,7 @@ ${composerStyles}
         position: absolute;
         inset: 0;
         z-index: 29;
-        background: #171b22;
+        background: #0f121a; /* Modern elegant dark background */
         transform: translateX(-100%);
         opacity: 0;
         pointer-events: none;
@@ -7976,6 +7976,10 @@ ${composerStyles}
       .sidebar-profile-panel::before {
         display: none;
       }
+      .sidebar-profile-panel .material-symbols-rounded {
+        font-variation-settings: "FILL" 0, "wght" 250, "GRAD" 0, "opsz" 24 !important;
+        font-weight: normal;
+      }
       .sidebar-profile-header {
         position: relative;
         z-index: 2;
@@ -7984,9 +7988,9 @@ ${composerStyles}
         gap: 4px;
         min-height: 64px;
         padding: 8px 8px 8px 4px;
-        border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+        border-bottom: 1px solid rgba(255, 255, 255, 0.03);
         flex-shrink: 0;
-        background: #171b22;
+        background: #0f121a;
       }
       .sidebar-profile-back,
       .sidebar-profile-edit,
@@ -8032,6 +8036,7 @@ ${composerStyles}
         overflow-y: auto;
         overflow-x: hidden;
         padding-bottom: 24px;
+        background: #0f121a;
       }
       .sidebar-profile-body::-webkit-scrollbar { width: 4px; }
       .sidebar-profile-body::-webkit-scrollbar-track { background: transparent; }
@@ -8041,8 +8046,8 @@ ${composerStyles}
         flex-direction: column;
         align-items: center;
         gap: 16px;
-        padding: 34px 24px 28px;
-        border-bottom: 8px solid #0e1118;
+        padding: 30px 24px 22px;
+        border-bottom: none;
       }
       .sidebar-profile-avatar-circle {
         width: 108px;
@@ -8050,7 +8055,7 @@ ${composerStyles}
         border-radius: 50%;
         overflow: hidden;
         flex-shrink: 0;
-        box-shadow: 0 4px 16px rgba(0, 0, 0, 0.35);
+        box-shadow: 0 4px 20px rgba(0, 0, 0, 0.4);
         transition: transform 0.2s ease;
       }
       .sidebar-profile-avatar-circle:hover {
@@ -8080,7 +8085,7 @@ ${composerStyles}
       .sidebar-profile-online-badge {
         display: inline-flex;
         align-items: center;
-        font-size: 13.5px;
+        font-size: 13px;
         color: #8e8e93;
         font-weight: 400;
         letter-spacing: 0.01em;
@@ -8089,18 +8094,17 @@ ${composerStyles}
         display: none;
       }
       .sidebar-profile-info-block {
-        margin: 0;
-        background: transparent;
-        border-radius: 0;
-        border: none;
-        border-bottom: 8px solid #0e1118;
+        margin: 8px 14px 12px;
+        background: rgba(255, 255, 255, 0.035);
+        border-radius: 16px;
+        border: 1px solid rgba(255, 255, 255, 0.04);
         overflow: hidden;
       }
       .sidebar-profile-info-row {
         display: flex;
         align-items: center;
         gap: 18px;
-        padding: 16px 24px;
+        padding: 14px 20px;
         cursor: pointer;
         transition: background 0.16s ease;
         user-select: none;
@@ -8112,8 +8116,8 @@ ${composerStyles}
         background: rgba(255, 255, 255, 0.1);
       }
       .sidebar-profile-info-icon {
-        font-size: 24px;
-        color: rgba(255, 255, 255, 0.45);
+        font-size: 22px;
+        color: rgba(255, 255, 255, 0.65);
         flex-shrink: 0;
       }
       .sidebar-profile-info-content {
@@ -8123,7 +8127,7 @@ ${composerStyles}
         min-width: 0;
       }
       .sidebar-profile-info-value {
-        font-size: 15.5px;
+        font-size: 15px;
         font-weight: 400;
         color: #fff;
         margin: 0;
@@ -8139,11 +8143,10 @@ ${composerStyles}
         letter-spacing: 0.01em;
       }
       .sidebar-profile-settings-block {
-        margin: 0;
-        background: transparent;
-        border-radius: 0;
-        border: none;
-        border-bottom: 8px solid #0e1118;
+        margin: 12px 14px;
+        background: rgba(255, 255, 255, 0.035);
+        border-radius: 16px;
+        border: 1px solid rgba(255, 255, 255, 0.04);
         overflow: hidden;
       }
       .sidebar-profile-setting-row {
@@ -8151,7 +8154,7 @@ ${composerStyles}
         display: flex;
         align-items: center;
         gap: 18px;
-        padding: 16px 24px;
+        padding: 14px 20px;
         background: transparent;
         border: none;
         border-bottom: none;
@@ -8164,13 +8167,13 @@ ${composerStyles}
       .sidebar-profile-setting-row:hover { background: rgba(255, 255, 255, 0.06); }
       .sidebar-profile-setting-row:active { background: rgba(255, 255, 255, 0.06); }
       .sidebar-profile-setting-icon {
-        font-size: 24px;
-        color: rgba(255, 255, 255, 0.45);
+        font-size: 22px;
+        color: rgba(255, 255, 255, 0.65);
         flex-shrink: 0;
       }
       .sidebar-profile-setting-label {
         flex: 1;
-        font-size: 15.5px;
+        font-size: 15px;
         font-weight: 400;
         color: #fff;
         min-width: 0;
@@ -8185,7 +8188,7 @@ ${composerStyles}
         font-size: 12.5px;
         font-weight: 500;
         color: #fff;
-        background: rgba(255, 255, 255, 0.15);
+        background: rgba(255, 255, 255, 0.12);
         border-radius: 12px;
         padding: 2px 8px;
         margin-right: 2px;
@@ -8195,10 +8198,10 @@ ${composerStyles}
         display: none;
       }
       .sidebar-profile-premium-block {
-        margin: 0;
-        background: transparent;
-        border-radius: 0;
-        border: none;
+        margin: 12px 14px 24px;
+        background: rgba(255, 255, 255, 0.035);
+        border-radius: 16px;
+        border: 1px solid rgba(255, 255, 255, 0.04);
         overflow: hidden;
       }
       .sidebar-profile-premium-row {
@@ -8206,7 +8209,7 @@ ${composerStyles}
         display: flex;
         align-items: center;
         gap: 18px;
-        padding: 16px 24px;
+        padding: 14px 20px;
         background: transparent;
         border: none;
         color: #fff;
@@ -8220,21 +8223,21 @@ ${composerStyles}
         display: flex;
         align-items: center;
         justify-content: center;
-        width: 24px;
-        height: 24px;
+        width: 22px;
+        height: 22px;
         background: transparent;
         flex-shrink: 0;
         box-shadow: none;
       }
       .sidebar-profile-premium-icon-wrap .material-symbols-rounded {
-        font-size: 24px;
-        color: #a78bfa;
+        font-size: 22px;
+        color: #c084fc;
       }
       .sidebar-profile-premium-label {
         flex: 1;
-        font-size: 15.5px;
+        font-size: 15px;
         font-weight: 500;
-        color: #a78bfa;
+        color: #c084fc;
       }
       .material-ripple {
         position: absolute;

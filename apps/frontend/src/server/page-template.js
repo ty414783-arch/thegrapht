@@ -396,7 +396,7 @@ export const buildHtml = ({
                     <span class="material-symbols-rounded sidebar-profile-setting-arrow" aria-hidden="true">chevron_right</span>
                   </button>
                   <button class="sidebar-profile-setting-row" type="button">
-                    <span class="material-symbols-rounded sidebar-profile-setting-icon" aria-hidden="true">tune</span>
+                    <span class="material-symbols-rounded sidebar-profile-setting-icon" aria-hidden="true">settings</span>
                     <span class="sidebar-profile-setting-label">General Settings</span>
                     <span class="material-symbols-rounded sidebar-profile-setting-arrow" aria-hidden="true">chevron_right</span>
                   </button>
@@ -417,7 +417,7 @@ export const buildHtml = ({
                     <span class="material-symbols-rounded sidebar-profile-setting-arrow" aria-hidden="true">chevron_right</span>
                   </button>
                   <button class="sidebar-profile-setting-row" type="button">
-                    <span class="material-symbols-rounded sidebar-profile-setting-icon" aria-hidden="true">language</span>
+                    <span class="material-symbols-rounded sidebar-profile-setting-icon" aria-hidden="true">translate</span>
                     <span class="sidebar-profile-setting-label">Language</span>
                     <span class="sidebar-profile-setting-value">English</span>
                     <span class="material-symbols-rounded sidebar-profile-setting-arrow" aria-hidden="true">chevron_right</span>
