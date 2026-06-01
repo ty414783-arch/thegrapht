@@ -150,6 +150,30 @@ export const uiControls = () => `
       chatProfileName?.addEventListener("contextmenu", onProfileIdentityContextMenu);
       chatProfileLink?.addEventListener("contextmenu", onProfileIdentityContextMenu);
 
+      const sidebarProfileUsernameEl = document.getElementById("sidebar-profile-username");
+      const sidebarProfileUsernameRow = sidebarProfileUsernameEl?.closest(".sidebar-profile-info-row");
+
+      sidebarProfileUsernameRow?.addEventListener("contextmenu", (event) => {
+        const rawUsername = String(currentUserUsername || "").trim();
+        if (!rawUsername) {
+          return;
+        }
+        const profileUrl = "https://web.thegrapht.su/@" + encodeURIComponent(rawUsername);
+
+        const isSameTargetOpen = Boolean(
+          profileLinkContextMenu?.classList.contains("open")
+          && profileLinkContextMenuState?.profileUrl
+          && String(profileLinkContextMenuState.profileUrl) === String(profileUrl)
+        );
+
+        event.preventDefault();
+        if (isSameTargetOpen) {
+          closeProfileLinkContextMenu();
+          return;
+        }
+        openProfileLinkContextMenu(event, profileUrl);
+      });
+
       document.getElementById("chat-profile-notifications-btn")?.addEventListener("click", () => {
         if (currentDialogSnapshot?.type !== "group" || !currentDialogSnapshot?.publicId) {
           return;

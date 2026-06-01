@@ -1,5 +1,5 @@
       const explicitApiBase = "";
-      const publicWebHosts = new Set(["web.thegrapht.su", "thegrapht.su", "www.thegrapht.su"]);
+      const publicWebHosts = new Set(["web.thegrapht.su", "dev.thegrapht.su", "thegrapht.su", "www.thegrapht.su"]);
       const isLoopbackHostname = (value) => /^(localhost|127\.0\.0\.1|0\.0\.0\.0)$/i.test(String(value || ""));
       const resolveApiBase = () => {
         const currentHost = window.location.hostname || "";
@@ -129,6 +129,11 @@
       const emojiPicker = document.getElementById("emoji-picker");
       const emojiPickerHead = document.getElementById("emoji-picker-head");
       const emojiPickerBody = document.getElementById("emoji-picker-body");
+      const emojiPickerSearch = document.getElementById("emoji-picker-search");
+      const emojiPickerSlideTrack = document.getElementById("emoji-picker-slide-track");
+      const gifPickerBody = document.getElementById("gif-picker-body");
+      const emojiModeTabEmoji = document.getElementById("emoji-mode-tab-emoji");
+      const emojiModeTabGif = document.getElementById("emoji-mode-tab-gif");
       const composerInputOverlay = document.getElementById("composer-input-overlay");
       const composerInput = document.getElementById("composer-input");
       const composerSend = document.getElementById("composer-send");
@@ -342,6 +347,7 @@
       let allDialogs = [];
       let realtimeSocket = null;
       let realtimeEnabled = false;
+      let isFirstRealtimeConnection = true;
       let currentDialogSnapshot = null;
       let currentMessagesSnapshot = [];
       let localOutgoingMessages = [];
@@ -376,10 +382,28 @@
       let mediaMessageSendInFlight = false;
       let emojiPickerCloseTimer = null;
       let attachMenuCloseTimer = null;
+      let pickerMode = "emoji";
+      const GIF_RECENTS_STORAGE_KEY = "tg_gif_recents";
+      const GIF_RECENTS_LIMIT = 100;
       const dialogPayloadCache = new Map();
       const prefetchedMediaUrls = new Set();
       const imageDimensionsCache = new Map();
       const dialogScrollTopCache = new Map();
+      try {
+        const storedTops = window.localStorage.getItem("tg_dialog_scroll_tops");
+        if (storedTops) {
+          const parsed = JSON.parse(storedTops);
+          if (parsed && typeof parsed === "object") {
+            for (const [key, value] of Object.entries(parsed)) {
+              if (Number.isFinite(value)) {
+                dialogScrollTopCache.set(key, value);
+              }
+            }
+          }
+        }
+      } catch (e) {
+        console.error("Failed to load dialog scroll tops:", e);
+      }
       const DIALOG_SCROLL_CACHE_LIMIT = 80;
       const visitedDialogsInSession = new Set();
 
@@ -401,6 +425,14 @@
           }
           dialogScrollTopCache.delete(oldestKey);
         }
+
+        try {
+          const obj = {};
+          for (const [k, v] of dialogScrollTopCache.entries()) {
+            obj[k] = v;
+          }
+          window.localStorage.setItem("tg_dialog_scroll_tops", JSON.stringify(obj));
+        } catch (e) {}
       };
 
       const getDialogScrollTop = (publicId) => {
@@ -411,6 +443,15 @@
         const value = dialogScrollTopCache.get(publicId);
         dialogScrollTopCache.delete(publicId);
         dialogScrollTopCache.set(publicId, value);
+
+        try {
+          const obj = {};
+          for (const [k, v] of dialogScrollTopCache.entries()) {
+            obj[k] = v;
+          }
+          window.localStorage.setItem("tg_dialog_scroll_tops", JSON.stringify(obj));
+        } catch (e) {}
+
         return Number.isFinite(value) ? value : null;
       };
 
@@ -654,6 +695,239 @@
         writeRecentEmojis(nextRecents);
       };
 
+      const readRecentGifs = () => {
+        try {
+          const parsed = JSON.parse(window.localStorage.getItem(GIF_RECENTS_STORAGE_KEY) || "[]");
+          return Array.isArray(parsed) ? parsed.filter((item) => typeof item === "string" && item.trim()).slice(0, GIF_RECENTS_LIMIT) : [];
+        } catch {
+          return [];
+        }
+      };
+
+      const writeRecentGifs = (gifs) => {
+        try {
+          window.localStorage.setItem(GIF_RECENTS_STORAGE_KEY, JSON.stringify(gifs.slice(0, GIF_RECENTS_LIMIT)));
+        } catch {}
+      };
+
+      const rememberRecentGif = (gifUrl) => {
+        const nextRecents = [gifUrl].concat(readRecentGifs().filter((item) => item !== gifUrl)).slice(0, GIF_RECENTS_LIMIT);
+        writeRecentGifs(nextRecents);
+      };
+
+      const filterEmojiSections = (sections, query) => {
+        if (!query) {
+          return sections;
+        }
+        const lowerQuery = query.toLowerCase();
+        return sections.map((section) => ({
+          ...section,
+          emojis: section.emojis.filter((emoji) => emoji.toLowerCase().includes(lowerQuery))
+        })).filter((section) => section.emojis.length > 0);
+      };
+
+      const setPickerMode = (mode) => {
+        pickerMode = mode;
+        if (emojiModeTabEmoji) {
+          emojiModeTabEmoji.classList.toggle("active", mode === "emoji");
+        }
+        if (emojiModeTabGif) {
+          emojiModeTabGif.classList.toggle("active", mode === "gif");
+        }
+        if (emojiPickerSlideTrack) {
+          emojiPickerSlideTrack.style.transform = mode === "gif" ? "translateX(-50%)" : "translateX(0)";
+        }
+        if (emojiPickerSearch) {
+          emojiPickerSearch.placeholder = mode === "gif" ? "Search GIFs" : "Search Emoji";
+          emojiPickerSearch.value = "";
+        }
+        if (emojiPickerHead) {
+          emojiPickerHead.style.display = mode === "gif" ? "none" : "";
+        }
+        if (mode === "gif") {
+          renderGifPicker();
+        }
+      };
+
+      let gifSearchTimeout = null;
+
+      const renderGifPicker = async () => {
+        if (!gifPickerBody) {
+          return;
+        }
+        const query = emojiPickerSearch ? emojiPickerSearch.value.trim() : "";
+        
+        if (query) {
+          gifPickerBody.innerHTML =
+            '<div class="gif-empty-state">' +
+              '<span class="material-symbols-rounded" aria-hidden="true" style="display: inline-block; animation: spin 1s linear infinite;">autorenew</span>' +
+              '<div class="gif-empty-state-text">Поиск в Giphy...</div>' +
+            '</div>';
+          
+          if (gifSearchTimeout) {
+            window.clearTimeout(gifSearchTimeout);
+          }
+          
+          gifSearchTimeout = window.setTimeout(async () => {
+            try {
+              const res = await fetch(apiBase + "/v1/gifs/search?q=" + encodeURIComponent(query));
+              if (!res.ok) throw new Error("Giphy API error");
+              const json = await res.json();
+              const items = json.data || [];
+              
+              if (items.length === 0) {
+                gifPickerBody.innerHTML =
+                  '<div class="gif-empty-state">' +
+                    '<span class="material-symbols-rounded" aria-hidden="true">gif_box</span>' +
+                    '<div class="gif-empty-state-text">Ничего не найдено</div>' +
+                  '</div>';
+                return;
+              }
+              
+              gifPickerBody.innerHTML =
+                '<p class="emoji-picker-title" style="margin-top: 4px; margin-bottom: 10px;">Результаты поиска</p>' +
+                '<div class="gif-grid">' +
+                  items.map((item) => {
+                    const previewUrl = item.images.fixed_height_downsampled?.url || item.images.fixed_height?.url || item.images.original?.url;
+                    const originalUrl = item.images.downsized?.url || item.images.original?.url;
+                    return (
+                      '<button class="gif-grid-item" type="button" data-gif-url="' + escapeHtml(originalUrl) + '">' +
+                        '<img src="' + escapeHtml(previewUrl) + '" alt="GIF" loading="lazy" decoding="async" referrerpolicy="no-referrer" />' +
+                      '</button>'
+                    );
+                  }).join("") +
+                '</div>';
+                
+              gifPickerBody.querySelectorAll("[data-gif-url]").forEach((button) => {
+                button.addEventListener("click", () => {
+                  const gifUrl = button.getAttribute("data-gif-url");
+                  if (!gifUrl) return;
+                  rememberRecentGif(gifUrl);
+                  const selectionStart = composerInput.selectionStart ?? composerInput.value.length;
+                  const selectionEnd = composerInput.selectionEnd ?? composerInput.value.length;
+                  composerInput.value = composerInput.value.slice(0, selectionStart) + gifUrl + composerInput.value.slice(selectionEnd);
+                  composerInput.focus();
+                  composerInput.setSelectionRange(selectionStart + gifUrl.length, selectionStart + gifUrl.length);
+                  syncComposerState();
+                  closeEmojiPicker();
+                });
+              });
+            } catch (err) {
+              console.error("Giphy search failed:", err);
+              gifPickerBody.innerHTML =
+                '<div class="gif-empty-state">' +
+                  '<span class="material-symbols-rounded" aria-hidden="true">error</span>' +
+                  '<div class="gif-empty-state-text">Ошибка поиска</div>' +
+                '</div>';
+            }
+          }, 300);
+        } else {
+          // Empty query - Render Recent AND Trending!
+          const recentGifs = readRecentGifs();
+          
+          let htmlMarkup = "";
+          
+          if (recentGifs.length > 0) {
+            htmlMarkup +=
+              '<p class="emoji-picker-title" style="margin-top: 4px; margin-bottom: 10px;">Недавние</p>' +
+              '<div class="gif-grid" style="margin-bottom: 16px;">' +
+                recentGifs.map((gifUrl) => (
+                  '<button class="gif-grid-item" type="button" data-gif-url="' + escapeHtml(gifUrl) + '">' +
+                    '<img src="' + escapeHtml(gifUrl) + '" alt="GIF" loading="lazy" decoding="async" referrerpolicy="no-referrer" />' +
+                  '</button>'
+                )).join("") +
+              '</div>';
+          }
+          
+          // Add a loading state for recommended/trending section
+          htmlMarkup +=
+            '<p class="emoji-picker-title" style="margin-top: 4px; margin-bottom: 10px;">Рекомендуемые</p>' +
+            '<div id="giphy-trending-container">' +
+              '<div class="gif-empty-state" style="padding: 20px 0;">' +
+                '<span class="material-symbols-rounded" aria-hidden="true" style="display: inline-block; animation: spin 1s linear infinite;">autorenew</span>' +
+                '<div class="gif-empty-state-text">Загрузка рекомендаций...</div>' +
+              '</div>' +
+            '</div>';
+            
+          gifPickerBody.innerHTML = htmlMarkup;
+          
+          // Setup click handlers for the Recent grid
+          gifPickerBody.querySelectorAll("[data-gif-url]").forEach((button) => {
+            button.addEventListener("click", () => {
+              const gifUrl = button.getAttribute("data-gif-url");
+              if (!gifUrl) return;
+              rememberRecentGif(gifUrl);
+              const selectionStart = composerInput.selectionStart ?? composerInput.value.length;
+              const selectionEnd = composerInput.selectionEnd ?? composerInput.value.length;
+              composerInput.value = composerInput.value.slice(0, selectionStart) + gifUrl + composerInput.value.slice(selectionEnd);
+              composerInput.focus();
+              composerInput.setSelectionRange(selectionStart + gifUrl.length, selectionStart + gifUrl.length);
+              syncComposerState();
+              closeEmojiPicker();
+            });
+          });
+          
+          // Fetch trending Giphys asynchronously!
+          try {
+            const res = await fetch(apiBase + "/v1/gifs/search?q=");
+            if (!res.ok) throw new Error("Giphy API error");
+            const json = await res.json();
+            const items = json.data || [];
+            
+            const trendingContainer = document.getElementById("giphy-trending-container");
+            if (!trendingContainer) return;
+            
+            if (items.length === 0) {
+              trendingContainer.innerHTML =
+                '<div class="gif-empty-state" style="padding: 20px 0;">' +
+                  '<span class="material-symbols-rounded" aria-hidden="true">gif_box</span>' +
+                  '<div class="gif-empty-state-text">Рекомендации недоступны</div>' +
+                '</div>';
+              return;
+            }
+            
+            trendingContainer.innerHTML =
+              '<div class="gif-grid">' +
+                items.map((item) => {
+                  const previewUrl = item.images.fixed_height_downsampled?.url || item.images.fixed_height?.url || item.images.original?.url;
+                  const originalUrl = item.images.downsized?.url || item.images.original?.url;
+                  return (
+                    '<button class="gif-grid-item" type="button" data-gif-url="' + escapeHtml(originalUrl) + '">' +
+                      '<img src="' + escapeHtml(previewUrl) + '" alt="GIF" loading="lazy" decoding="async" referrerpolicy="no-referrer" />' +
+                    '</button>'
+                  );
+                }).join("") +
+              '</div>';
+              
+            // Setup click handlers for the newly loaded Trending grid
+            trendingContainer.querySelectorAll("[data-gif-url]").forEach((button) => {
+              button.addEventListener("click", () => {
+                const gifUrl = button.getAttribute("data-gif-url");
+                if (!gifUrl) return;
+                rememberRecentGif(gifUrl);
+                const selectionStart = composerInput.selectionStart ?? composerInput.value.length;
+                const selectionEnd = composerInput.selectionEnd ?? composerInput.value.length;
+                composerInput.value = composerInput.value.slice(0, selectionStart) + gifUrl + composerInput.value.slice(selectionEnd);
+                composerInput.focus();
+                composerInput.setSelectionRange(selectionStart + gifUrl.length, selectionStart + gifUrl.length);
+                syncComposerState();
+                closeEmojiPicker();
+              });
+            });
+          } catch (err) {
+            console.error("Failed to load Giphy trending:", err);
+            const trendingContainer = document.getElementById("giphy-trending-container");
+            if (trendingContainer) {
+              trendingContainer.innerHTML =
+                '<div class="gif-empty-state" style="padding: 20px 0;">' +
+                  '<span class="material-symbols-rounded" aria-hidden="true">error</span>' +
+                  '<div class="gif-empty-state-text">Не удалось загрузить рекомендации</div>' +
+                '</div>';
+            }
+          }
+        }
+      };
+
       const splitGraphemes = (value) => {
         const text = String(value || "");
         if (!text) {
@@ -697,7 +971,7 @@
           if (emojiClusterPattern.test(segment)) {
             const emojiAssetUrl = getEmojiAssetUrl(segment);
             const emojiMarkup = emojiAssetUrl
-              ? '<img class="inline-emoji' + extraClass + '" src="' + escapeHtml(emojiAssetUrl) + '" alt="' + escapeHtml(segment) + '" onerror="if(!this.src.includes(\'-fe0f\') && !this.dataset.triedFe0f){this.dataset.triedFe0f=true;this.src=this.src.replace(\'.png\',\'-fe0f.png\');}else if(this.src.includes(\'-fe0f\') && !this.dataset.triedNoFe0f){this.dataset.triedNoFe0f=true;this.src=this.src.replace(\'-fe0f.png\',\'.png\');}else{this.outerHTML=this.alt;}" draggable="false" loading="lazy" decoding="async">'
+              ? '<img class="inline-emoji' + extraClass + '" src="' + escapeHtml(emojiAssetUrl) + '" alt="' + escapeHtml(segment) + '" onerror=\'if(!/-fe0f/.test(this.src) && !this.dataset.triedFe0f){this.dataset.triedFe0f=true;this.src=this.src.replace(/[.]png$/,"-fe0f.png");}else if(/-fe0f/.test(this.src) && !this.dataset.triedNoFe0f){this.dataset.triedNoFe0f=true;this.src=this.src.replace(/-fe0f[.]png$/,".png");}else{this.outerHTML=this.alt;}\' draggable="false" loading="lazy" decoding="async">'
               : '<span class="inline-emoji' + extraClass + '" aria-label="' + escapeHtml(segment) + '">' + escapeHtml(segment) + '</span>';
             result += options.wrapEmoji
               ? '<span class="composer-emoji-slot">' + emojiMarkup + '</span>'
@@ -744,23 +1018,32 @@
       };
 
       const renderEmojiPicker = () => {
+        const query = emojiPickerSearch ? emojiPickerSearch.value.trim() : "";
         const recentSection = {
           ...emojiSections[0],
           emojis: readRecentEmojis()
         };
-        const sections = [recentSection].concat(emojiSections.slice(1));
+        let sections = [recentSection].concat(emojiSections.slice(1));
+        if (query) {
+          sections = filterEmojiSections(sections, query);
+        }
 
         emojiPickerHead.innerHTML = sections.map((section, index) => {
           const emojiChar = emojiTabIcons[section.key] || "";
           const emojiAssetUrl = getEmojiAssetUrl(emojiChar);
           const iconHtml = emojiAssetUrl
-            ? '<img class="emoji-picker-tab-image" src="' + escapeHtml(emojiAssetUrl) + '" alt="' + escapeHtml(emojiChar) + '" onerror="if(!this.src.includes(\'-fe0f\') && !this.dataset.triedFe0f){this.dataset.triedFe0f=true;this.src=this.src.replace(\'.png\',\'-fe0f.png\');}else if(this.src.includes(\'-fe0f\') && !this.dataset.triedNoFe0f){this.dataset.triedNoFe0f=true;this.src=this.src.replace(\'-fe0f.png\',\'.png\');}else{this.outerHTML=this.alt;}" aria-hidden="true" loading="lazy" decoding="async">'
+            ? '<img class="emoji-picker-tab-image" src="' + escapeHtml(emojiAssetUrl) + '" alt="' + escapeHtml(emojiChar) + '" onerror=\'if(!/-fe0f/.test(this.src) && !this.dataset.triedFe0f){this.dataset.triedFe0f=true;this.src=this.src.replace(/[.]png$/,"-fe0f.png");}else if(/-fe0f/.test(this.src) && !this.dataset.triedNoFe0f){this.dataset.triedNoFe0f=true;this.src=this.src.replace(/-fe0f[.]png$/,".png");}else{this.outerHTML=this.alt;}\' aria-hidden="true" loading="lazy" decoding="async">'
             : '<span class="emoji-picker-tab-fallback">' + escapeHtml(emojiChar) + '</span>';
 
           return '<button class="emoji-picker-tab' + (index === 0 ? ' active' : '') + '" type="button" data-emoji-tab="' + section.key + '" aria-label="' + escapeHtml(section.title) + '">' +
             iconHtml +
           '</button>';
         }).join("");
+
+        if (sections.length === 0) {
+          emojiPickerBody.innerHTML = '<div class="emoji-picker-no-results">Ничего не найдено</div>';
+          return;
+        }
 
         emojiPickerBody.innerHTML = sections.map((section) => (
           '<section class="emoji-picker-section" data-emoji-section="' + section.key + '">' +
@@ -774,7 +1057,7 @@
                   '<button class="emoji-button" type="button" data-emoji-value="' + escapeHtml(emoji) + '" aria-label="' + escapeHtml(emoji) + '">' +
                     (
                       emojiAssetUrl
-                        ? '<img class="emoji-button-image" src="' + escapeHtml(emojiAssetUrl) + '" alt="' + escapeHtml(emoji) + '" onerror="if(!this.src.includes(\'-fe0f\') && !this.dataset.triedFe0f){this.dataset.triedFe0f=true;this.src=this.src.replace(\'.png\',\'-fe0f.png\');}else if(this.src.includes(\'-fe0f\') && !this.dataset.triedNoFe0f){this.dataset.triedNoFe0f=true;this.src=this.src.replace(\'-fe0f.png\',\'.png\');}else{this.outerHTML=this.alt;}" aria-hidden="true" loading="lazy" decoding="async">'
+                        ? '<img class="emoji-button-image" src="' + escapeHtml(emojiAssetUrl) + '" alt="' + escapeHtml(emoji) + '" onerror=\'if(!/-fe0f/.test(this.src) && !this.dataset.triedFe0f){this.dataset.triedFe0f=true;this.src=this.src.replace(/[.]png$/,"-fe0f.png");}else if(/-fe0f/.test(this.src) && !this.dataset.triedNoFe0f){this.dataset.triedNoFe0f=true;this.src=this.src.replace(/-fe0f[.]png$/,".png");}else{this.outerHTML=this.alt;}\' aria-hidden="true" loading="lazy" decoding="async">'
                         : '<span class="emoji-button-image" aria-hidden="true">' + escapeHtml(emoji) + '</span>'
                     ) +
                   '</button>'
@@ -830,6 +1113,9 @@
         }
         emojiPicker.classList.remove("open");
         emojiPicker.setAttribute("aria-hidden", "true");
+        if (emojiPickerSearch) {
+          emojiPickerSearch.value = "";
+        }
       };
 
       const scheduleEmojiPickerClose = () => {
@@ -846,6 +1132,7 @@
           window.clearTimeout(emojiPickerCloseTimer);
           emojiPickerCloseTimer = null;
         }
+        setPickerMode("emoji");
         renderEmojiPicker();
         emojiPicker.classList.add("open");
         emojiPicker.setAttribute("aria-hidden", "false");
@@ -1209,7 +1496,12 @@
           return null;
         }
 
-        return imageDimensionsCache.get(url) || null;
+        let targetUrl = url;
+        if (typeof window.mediaUrlToBlobUrlCache !== "undefined" && window.mediaUrlToBlobUrlCache && window.mediaUrlToBlobUrlCache.has(url)) {
+          targetUrl = window.mediaUrlToBlobUrlCache.get(url);
+        }
+
+        return imageDimensionsCache.get(targetUrl) || imageDimensionsCache.get(url) || null;
       };
 
       const writeImageDimensions = (url, image) => {
@@ -1450,6 +1742,99 @@
         return currentMessagesSnapshot.concat(getLocalMessagesForDialog(currentDialogSnapshot.publicId));
       };
 
+      // Global Material Design Ripple Effect with Release Fade-out
+      const createRipple = (e) => {
+        const target = e.target.closest("button, [role='button'], .dialog-item, .sidebar-glass-menu-item, .sidebar-profile-setting-row, .sidebar-profile-premium-row, .btn, .chat-island-action");
+        if (!target || target.disabled || target.classList.contains("disabled")) return;
+        
+        const style = window.getComputedStyle(target);
+        const origPosition = style.position;
+        if (origPosition !== "absolute" && origPosition !== "relative" && origPosition !== "fixed") {
+          target.style.position = "relative";
+        }
+        
+        const origOverflow = style.overflow;
+        if (origOverflow !== "hidden") {
+          target.style.overflow = "hidden";
+        }
+        
+        const rect = target.getBoundingClientRect();
+        
+        let clientX = e.clientX;
+        let clientY = e.clientY;
+        
+        if (e.touches && e.touches[0]) {
+          clientX = e.touches[0].clientX;
+          clientY = e.touches[0].clientY;
+        }
+        
+        let x = clientX - rect.left;
+        let y = clientY - rect.top;
+        
+        if (typeof clientX !== "number" || isNaN(x) || isNaN(y)) {
+          x = rect.width / 2;
+          y = rect.height / 2;
+        }
+        
+        const dx = Math.max(x, rect.width - x);
+        const dy = Math.max(y, rect.height - y);
+        const radius = Math.sqrt(dx * dx + dy * dy);
+        
+        target.querySelectorAll(".material-ripple").forEach(r => r.remove());
+        
+        const ripple = document.createElement("span");
+        ripple.className = "material-ripple";
+        ripple.style.width = (radius * 2) + "px";
+        ripple.style.height = (radius * 2) + "px";
+        ripple.style.left = (x - radius) + "px";
+        ripple.style.top = (y - radius) + "px";
+        
+        target.appendChild(ripple);
+        
+        // Trigger layout reflow to register starting scale(0)
+        // eslint-disable-next-line @typescript-eslint/no-unused-expressions
+        ripple.offsetWidth;
+        
+        ripple.style.transform = "scale(1)";
+        ripple.style.opacity = "1";
+        
+        const startTime = Date.now();
+        
+        const releaseRipple = () => {
+          const elapsed = Date.now() - startTime;
+          const delay = Math.max(0, 320 - elapsed);
+          
+          setTimeout(() => {
+            ripple.style.opacity = "0";
+            
+            setTimeout(() => {
+              ripple.remove();
+              if (target && !target.querySelector(".material-ripple")) {
+                if (origPosition !== "absolute" && origPosition !== "relative" && origPosition !== "fixed") {
+                  target.style.removeProperty("position");
+                }
+                if (origOverflow !== "hidden") {
+                  target.style.removeProperty("overflow");
+                }
+              }
+            }, 450);
+          }, delay);
+          
+          target.removeEventListener("mouseup", releaseRipple);
+          target.removeEventListener("mouseleave", releaseRipple);
+          target.removeEventListener("touchend", releaseRipple);
+          target.removeEventListener("touchcancel", releaseRipple);
+        };
+        
+        target.addEventListener("mouseup", releaseRipple);
+        target.addEventListener("mouseleave", releaseRipple);
+        target.addEventListener("touchend", releaseRipple);
+        target.addEventListener("touchcancel", releaseRipple);
+      };
+      
+      document.addEventListener("mousedown", createRipple);
+      document.addEventListener("touchstart", createRipple, { passive: true });
+
       const secureFeatureState = {
         identityPromise: null,
         publishPromise: null,
@@ -1671,9 +2056,11 @@
           ...(options.headers || {})
         };
         const host = String(window.location.hostname || "").toLowerCase();
+        const isDesktop = host === "" || (typeof window !== "undefined" && (!!window.tgDesktop || !!window.__TAURI_INTERNALS__));
         const canUseLegacyAuthorizationHeader = host === "localhost"
           || host === "127.0.0.1"
-          || host.endsWith(".local");
+          || host.endsWith(".local")
+          || isDesktop;
         if (canUseLegacyAuthorizationHeader && legacySessionToken && !headers.Authorization) {
           headers.Authorization = "Bearer " + legacySessionToken;
         }
@@ -2199,10 +2586,262 @@
       };
 
 
+
       const createCallId = () => "call_" + Date.now() + "_" + Math.random().toString(36).slice(2, 10);
       const CALL_SETUP_TIMEOUT_MS = 22000;
       const CALL_RECONNECT_GRACE_MS = 8000;
       const rtcIceServersRaw = "";
+
+      const formatCallDuration = (seconds) => {
+        const safeSeconds = Math.max(0, Math.floor(seconds || 0));
+        const minutes = Math.floor(safeSeconds / 60);
+        const remainder = safeSeconds % 60;
+        return String(minutes).padStart(2, "0") + ":" + String(remainder).padStart(2, "0");
+      };
+
+      const parseRtcIceServers = () => {
+        const normalizeUrlsList = (value) => {
+          const list = Array.isArray(value) ? value : [value];
+          return list
+            .map((entry) => typeof entry === "string" ? entry.trim() : "")
+            .filter(Boolean);
+        };
+        const isValidIceUrl = (value) => {
+          if (typeof value !== "string") {
+            return false;
+          }
+          const raw = value.trim();
+          if (!raw) {
+            return false;
+          }
+          // Accept stun/turn/turns with either hostname or IPv4 and optional
+          // port/query. Reject malformed values like "stun::3478".
+          return /^(stun|turn|turns):[a-z0-9.-]+(?::\d{1,5})?(?:\?.*)?$/i.test(raw);
+        };
+        const hasTurnUrl = (value) => normalizeUrlsList(value).some((entry) => /^turns?:/i.test(entry));
+        const isValidTurnAuth = (username, credential) =>
+          typeof username === "string"
+          && username.trim().length > 0
+          && typeof credential === "string"
+          && credential.trim().length > 0;
+        const defaultTurnHost = (window.location && window.location.hostname) ? window.location.hostname : "89.35.130.157";
+        const fallback = [
+          { urls: "stun:" + defaultTurnHost + ":3478" },
+          {
+            urls: [
+              "turn:" + defaultTurnHost + ":3478?transport=udp",
+              "turn:" + defaultTurnHost + ":3478?transport=tcp"
+            ],
+            username: "thegrapht_turn",
+            credential: "thegrapht_turn_pass"
+          }
+        ];
+
+        if (!rtcIceServersRaw) {
+          logCall("ice_servers_fallback_default", { fallback });
+          return fallback;
+        }
+
+        try {
+          const parsed = JSON.parse(rtcIceServersRaw);
+          if (!Array.isArray(parsed)) {
+            return fallback;
+          }
+
+          const normalized = parsed
+            .filter((item) => item && typeof item === "object")
+            .map((item) => {
+              const urls = item.urls;
+              const username = typeof item.username === "string" ? item.username.trim() : "";
+              const credential = typeof item.credential === "string" ? item.credential.trim() : "";
+
+              if (typeof urls === "string" || Array.isArray(urls)) {
+                const filteredUrls = normalizeUrlsList(urls).filter((entry) => isValidIceUrl(entry));
+                if (!filteredUrls.length) {
+                  warnCall("dropping_invalid_ice_server_urls", { urls });
+                  return null;
+                }
+
+                if (hasTurnUrl(filteredUrls) && !isValidTurnAuth(username, credential)) {
+                  warnCall("dropping_invalid_turn_server_missing_credentials", { urls });
+                  return null;
+                }
+
+                return {
+                  urls: Array.isArray(urls) ? filteredUrls : filteredUrls[0],
+                  ...(username ? { username } : {}),
+                  ...(credential ? { credential } : {})
+                };
+              }
+
+              return null;
+            })
+            .filter(Boolean);
+
+          const resolved = normalized.length ? normalized : fallback;
+          logCall("ice_servers_resolved", { resolved });
+          return resolved;
+        } catch {
+          warnCall("ice_servers_parse_failed_using_fallback", { rtcIceServersRaw });
+          return fallback;
+        }
+      };
+
+
+      const buildAnimatedDots = () => {
+        const phase = (Math.floor(Date.now() / 420) % 3) + 1;
+        return ".".repeat(phase);
+      };
+
+      const getCallElapsedSeconds = () => {
+        if (!activeCall) {
+          return 0;
+        }
+        if (activeCall.mode === "group") {
+          return getGroupCallElapsedSecondsForCall(activeCall);
+        }
+        if (!activeCall.connectedAt) {
+          return 0;
+        }
+        return Math.max(0, Math.floor((Date.now() - activeCall.connectedAt) / 1000));
+      };
+      const CLOSED_CALL_COOLDOWN_MS = 25000;
+      const CALL_ACCEPT_BROADCAST_STORAGE_KEY = "thegrapht_call_accept_broadcast";
+      const recentlyClosedCalls = new Map();
+      const pruneRecentlyClosedCalls = () => {
+        const now = Date.now();
+        for (const [key, expiresAt] of recentlyClosedCalls.entries()) {
+          if (!Number.isFinite(expiresAt) || expiresAt <= now) {
+            recentlyClosedCalls.delete(key);
+          }
+        }
+      };
+      const buildClosedCallKey = (dialogId, callId) => {
+        const safeDialogId = String(dialogId || "").trim();
+        const safeCallId = String(callId || "").trim();
+        if (!safeDialogId || !safeCallId) {
+          return "";
+        }
+        return safeDialogId + "|" + safeCallId;
+      };
+      const rememberRecentlyClosedCall = (dialogId, callId) => {
+        const key = buildClosedCallKey(dialogId, callId);
+        if (!key) {
+          return;
+        }
+        recentlyClosedCalls.set(key, Date.now() + CLOSED_CALL_COOLDOWN_MS);
+      };
+      const isRecentlyClosedCall = (dialogId, callId) => {
+        pruneRecentlyClosedCalls();
+        const key = buildClosedCallKey(dialogId, callId);
+        if (!key) {
+          return false;
+        }
+        return recentlyClosedCalls.has(key);
+      };
+      const broadcastCallAcceptedAcrossTabs = (call) => {
+        if (!call?.callId || !call?.dialogId) {
+          return;
+        }
+        try {
+          window.localStorage.setItem(CALL_ACCEPT_BROADCAST_STORAGE_KEY, JSON.stringify({
+            callId: String(call.callId || ""),
+            dialogId: String(call.dialogId || ""),
+            acceptedAt: Date.now()
+          }));
+        } catch {}
+      };
+
+      const getCallScreenOwnerName = () => {
+        if (!activeCall) {
+          return "";
+        }
+        if (activeCall.screenEnabled && activeCall.screenOwnerUserId === currentUserId) {
+          return currentUserDisplayName || workspaceUserName.textContent || "You";
+        }
+        if (activeCall.remoteScreenSharing && activeCall.screenOwnerUserId && activeCall.screenOwnerUserId !== currentUserId) {
+          return activeCall.peerName || "Remote user";
+        }
+        return activeCall.peerName || currentUserDisplayName || workspaceUserName.textContent || "User";
+      };
+      const ensureScreenOverlayNodes = () => {
+        if (!(callModal instanceof HTMLElement)) {
+          return null;
+        }
+        let overlay = callModal.querySelector(".call-screen-overlay");
+        if (!(overlay instanceof HTMLElement)) {
+          overlay = document.createElement("div");
+          overlay.className = "call-screen-overlay";
+          overlay.setAttribute("aria-hidden", "true");
+          overlay.innerHTML = ""
+            + '<div class="call-screen-overlay-backdrop" data-overlay-dismiss="true"></div>'
+            + '<div class="call-screen-overlay-content">'
+            +   '<div class="call-screen-overlay-title"></div>'
+            +   '<div class="call-screen-overlay-stage" data-overlay-dismiss="true"></div>'
+            +   '<div class="call-screen-overlay-hud">'
+            +     '<span class="material-symbols-rounded" aria-hidden="true">screen_share</span>'
+            +     '<span class="call-screen-overlay-owner"></span>'
+            +   '</div>'
+            + '</div>';
+          callModal.appendChild(overlay);
+        }
+        const stage = overlay.querySelector(".call-screen-overlay-stage");
+        const title = overlay.querySelector(".call-screen-overlay-title");
+        const owner = overlay.querySelector(".call-screen-overlay-owner");
+        if (!(stage instanceof HTMLElement) || !(title instanceof HTMLElement) || !(owner instanceof HTMLElement)) {
+          return null;
+        }
+        return { overlay, stage, title, owner };
+      };
+      const closeExpandedScreenPreview = () => {
+        if (!(callModal instanceof HTMLElement)) {
+          return;
+        }
+        const nodes = ensureScreenOverlayNodes();
+        if (!nodes) {
+          return;
+        }
+        nodes.overlay.classList.remove("open");
+        nodes.overlay.setAttribute("aria-hidden", "true");
+        nodes.stage.innerHTML = "";
+      };
+      const openExpandedScreenPreview = () => {
+        if (!activeCall || activeCall.mode === "group") {
+          return;
+        }
+        const sourceVideo = document.getElementById("remote-screen-video");
+        const sourceStream = sourceVideo instanceof HTMLVideoElement ? sourceVideo.srcObject : null;
+        if (!(sourceStream instanceof MediaStream)) {
+          return;
+        }
+        const nodes = ensureScreenOverlayNodes();
+        if (!nodes) {
+          return;
+        }
+        const ownerName = getCallScreenOwnerName();
+        nodes.title.textContent = "Screen sharing: " + ownerName;
+        nodes.owner.textContent = ownerName;
+        nodes.stage.innerHTML = "";
+        const expandedVideo = document.createElement("video");
+        expandedVideo.className = "call-screen-overlay-video";
+        expandedVideo.setAttribute("data-overlay-dismiss", "true");
+        expandedVideo.autoplay = true;
+        expandedVideo.playsInline = true;
+        expandedVideo.srcObject = sourceStream;
+        nodes.stage.appendChild(expandedVideo);
+        nodes.overlay.classList.add("open");
+        nodes.overlay.setAttribute("aria-hidden", "false");
+        try {
+          const playPromise = expandedVideo.play();
+          if (playPromise?.catch) {
+            playPromise.catch(() => {});
+          }
+        } catch {}
+      };
+
+
+
+
       const CALL_DEBUG_PREFIX = "[TheGraphT Call]";
       const callDebugLogBuffer = Array.isArray(window.__THEGRAPHT_CALL_LOGS__)
         ? window.__THEGRAPHT_CALL_LOGS__
@@ -2331,12 +2970,260 @@
         };
       };
 
-      const formatCallDuration = (seconds) => {
-        const safeSeconds = Math.max(0, Math.floor(seconds || 0));
-        const minutes = Math.floor(safeSeconds / 60);
-        const remainder = safeSeconds % 60;
-        return String(minutes).padStart(2, "0") + ":" + String(remainder).padStart(2, "0");
+      const setCallError = (message, details = {}) => {
+        if (!activeCall) {
+          return;
+        }
+
+        activeCall.lastError = message;
+        activeCall.lastErrorAt = Date.now();
+        errCall("call_error", {
+          callId: activeCall.callId,
+          status: activeCall.status,
+          message,
+          ...details
+        });
       };
+
+      const getCallErrorForUi = (message) => {
+        const normalized = typeof message === "string" ? message.trim() : "";
+        if (!normalized) {
+          return "";
+        }
+
+        if (/^ICE\s+\d+:/i.test(normalized)) {
+          return "network issue, retrying connection";
+        }
+
+        return normalized.length > 120 ? (normalized.slice(0, 117) + "...") : normalized;
+      };
+
+      const ensureOutgoingCallRingtoneNode = () => {
+        if (outgoingCallRingtoneNode) {
+          return outgoingCallRingtoneNode;
+        }
+
+        outgoingCallRingtoneNode = new Audio("/outgoing.mp3");
+        outgoingCallRingtoneNode.loop = false;
+        outgoingCallRingtoneNode.preload = "auto";
+        return outgoingCallRingtoneNode;
+      };
+
+      const ensureIncomingCallRingtoneNode = () => {
+        if (incomingCallRingtoneNode) {
+          return incomingCallRingtoneNode;
+        }
+
+        incomingCallRingtoneNode = new Audio("/incoming.mp3");
+        incomingCallRingtoneNode.loop = true;
+        incomingCallRingtoneNode.preload = "auto";
+        return incomingCallRingtoneNode;
+      };
+
+      const startOutgoingCallRingtone = () => {
+        const node = ensureOutgoingCallRingtoneNode();
+
+        try {
+          node.currentTime = 0;
+          const playPromise = node.play();
+          if (playPromise?.catch) {
+            playPromise.catch(() => {});
+          }
+        } catch {}
+      };
+
+      const startIncomingCallRingtone = () => {
+        const node = ensureIncomingCallRingtoneNode();
+
+        try {
+          node.currentTime = 0;
+          const playPromise = node.play();
+          if (playPromise?.catch) {
+            playPromise.catch(() => {});
+          }
+        } catch {}
+      };
+
+      const claimCallRingtonePlayback = (callId) => {
+        if (!callId) {
+          return false;
+        }
+        if (typeof claimNotificationDelivery === "function") {
+          return claimNotificationDelivery("call_ringtone", callId, 20000);
+        }
+        return true;
+      };
+
+      const stopCallRingtone = () => {
+        [outgoingCallRingtoneNode, incomingCallRingtoneNode].forEach((node) => {
+          if (!node) {
+            return;
+          }
+          try {
+            node.pause();
+            node.currentTime = 0;
+          } catch {}
+        });
+      };
+
+      const buildCallMessageMarker = (kind, durationSeconds = 0) => {
+        const safeDuration = Math.max(0, Math.floor(durationSeconds || 0));
+        return kind === "ended"
+          ? "[[call:" + kind + ":" + safeDuration + "]]"
+          : "[[call:" + kind + "]]";
+      };
+
+      const clearCallTimers = () => {
+        if (callTickTimer) {
+          window.clearInterval(callTickTimer);
+          callTickTimer = null;
+        }
+        stopGroupCallPresenceHeartbeat();
+        stopGroupLocalVoiceMeter();
+
+        if (callTimeoutTimer) {
+          window.clearTimeout(callTimeoutTimer);
+          callTimeoutTimer = null;
+        }
+
+        stopCallRingtone();
+      };
+
+      const armCallSetupTimeout = (callId, reason = "missed") => {
+        if (callTimeoutTimer) {
+          window.clearTimeout(callTimeoutTimer);
+        }
+
+        logCall("setup_timeout_armed", { callId, reason, timeoutMs: CALL_SETUP_TIMEOUT_MS });
+
+        callTimeoutTimer = window.setTimeout(() => {
+          if (!activeCall || activeCall.callId !== callId || activeCall.status === "active") {
+            return;
+          }
+
+          if (reason === "no_connect") {
+            setCallError("Failed to establish P2P connection (ICE timeout).", {
+              connectionState: activeCall.peerConnection?.connectionState,
+              iceConnectionState: activeCall.peerConnection?.iceConnectionState,
+              iceGatheringState: activeCall.peerConnection?.iceGatheringState
+            });
+            showToast("Failed to establish call connection (ICE timeout).", "error");
+          }
+
+          warnCall("setup_timeout_fired", {
+            callId,
+            reason,
+            status: activeCall.status,
+            connectionState: activeCall.peerConnection?.connectionState,
+            iceConnectionState: activeCall.peerConnection?.iceConnectionState,
+            iceGatheringState: activeCall.peerConnection?.iceGatheringState
+          });
+
+          sendCallRealtime({
+            type: "call_end",
+            callId: activeCall.callId,
+            dialogId: activeCall.dialogId,
+            dialogPublicId: activeCall.dialogPublicId,
+            reason,
+            summaryBody: buildCallMessageMarker("missed")
+          });
+
+          void finishActiveCall({
+            summaryBody: buildCallMessageMarker("missed"),
+            remoteEnded: false
+          });
+        }, CALL_SETUP_TIMEOUT_MS);
+      };
+
+
+      const buildCallVideoDebugDetails = (extra = {}) => {
+        const remoteVideo = document.getElementById("remote-screen-video");
+        const placeholder = document.getElementById("call-main-placeholder");
+        const localPreview = document.getElementById("local-video-preview");
+        const modalClassList = callModal?.classList ? Array.from(callModal.classList) : [];
+        const remoteElementStream = remoteVideo instanceof HTMLVideoElement ? remoteVideo.srcObject : null;
+        const localPreviewStream = localPreview instanceof HTMLVideoElement ? localPreview.srcObject : null;
+        return {
+          callId: activeCall?.callId || "",
+          status: activeCall?.status || "",
+          direction: activeCall?.direction || "",
+          elapsed: getCallElapsedSeconds(),
+          screenEnabled: Boolean(activeCall?.screenEnabled),
+          remoteScreenSharing: Boolean(activeCall?.remoteScreenSharing),
+          screenOwnerUserId: activeCall?.screenOwnerUserId || "",
+          cameraEnabled: Boolean(activeCall?.cameraEnabled),
+          hasActiveRemoteVideoStream: activeCall?.remoteVideoStream instanceof MediaStream,
+          activeRemoteVideoStream: getDebugStreamState(activeCall?.remoteVideoStream),
+          localVisualStream: getDebugStreamState(activeCall?.localVisualStream),
+          remoteElementStream: getDebugStreamState(remoteElementStream),
+          localPreviewStream: getDebugStreamState(localPreviewStream),
+          remoteVideoElement: remoteVideo instanceof HTMLVideoElement ? {
+            hidden: Boolean(remoteVideo.hidden),
+            display: remoteVideo.style.display || "",
+            className: remoteVideo.className || "",
+            paused: Boolean(remoteVideo.paused),
+            readyState: remoteVideo.readyState,
+            videoWidth: remoteVideo.videoWidth,
+            videoHeight: remoteVideo.videoHeight,
+            currentTime: Number.isFinite(remoteVideo.currentTime) ? Number(remoteVideo.currentTime.toFixed(2)) : 0
+          } : null,
+          placeholder: placeholder instanceof HTMLElement ? {
+            hidden: Boolean(placeholder.hidden),
+            display: placeholder.style.display || ""
+          } : null,
+          modal: {
+            classList: modalClassList,
+            screenShareActive: modalClassList.includes("screen-share-active"),
+            hasDirectVisuals: modalClassList.includes("has-direct-visuals"),
+            hasScreenShare: modalClassList.includes("has-screen-share"),
+            directVisualLayout: callModal?.dataset?.directVisualLayout || ""
+          },
+          peerConnection: activeCall?.peerConnection ? {
+            connectionState: activeCall.peerConnection.connectionState,
+            iceConnectionState: activeCall.peerConnection.iceConnectionState,
+            signalingState: activeCall.peerConnection.signalingState
+          } : null,
+          ...extra
+        };
+      };
+
+      const logCallVideoDebug = (event, details = {}) => {
+        logCall("video_debug_" + event, buildCallVideoDebugDetails(details));
+      };
+
+      const logCallVideoDebugSnapshot = (source, { force = false } = {}) => {
+        if (!activeCall || activeCall.mode === "group") {
+          return;
+        }
+        const elapsed = getCallElapsedSeconds();
+        const remoteTrack = activeCall.remoteVideoStream instanceof MediaStream
+          ? activeCall.remoteVideoStream.getVideoTracks()[0] || null
+          : null;
+        const signature = [
+          elapsed,
+          activeCall.screenEnabled ? 1 : 0,
+          activeCall.remoteScreenSharing ? 1 : 0,
+          activeCall.cameraEnabled ? 1 : 0,
+          remoteTrack?.id || "",
+          remoteTrack?.muted ? 1 : 0,
+          remoteTrack?.readyState || "",
+          callModal?.classList?.contains("screen-share-active") ? 1 : 0,
+          callModal?.classList?.contains("has-direct-visuals") ? 1 : 0
+        ].join("|");
+        if (!force && elapsed > 20 && activeCall.__lastVideoDebugSignature === signature) {
+          return;
+        }
+        if (!force && activeCall.__lastVideoDebugSecond === elapsed && activeCall.__lastVideoDebugSignature === signature) {
+          return;
+        }
+        activeCall.__lastVideoDebugSecond = elapsed;
+        activeCall.__lastVideoDebugSignature = signature;
+        logCallVideoDebug("snapshot", { source, signature });
+      };
+
+
+
+
       const callFingerprintEmojiPool = ["🍎","🐱","🚀","🔥","🎯","🌊","🛰️","🛡️","⚡","🌙","🎧","📡","🧩","🎮","🦊","🧠","🦄","🍀","🧭","🔐","📶","🕹️","🫧","🌐"];
       const callFingerprintEmojiHints = {
         "🍎": "Red apple",
@@ -2417,7 +3304,7 @@
           if (!emojiAssetUrl) {
             return '<span class="call-fingerprint-emoji" data-emoji-hint="' + escapeHtml(emojiHint) + '" aria-label="' + escapeHtml(emojiHint) + '">' + escapeHtml(emoji) + '</span>';
           }
-          return '<img class="call-fingerprint-emoji" data-emoji-hint="' + escapeHtml(emojiHint) + '" src="' + escapeHtml(emojiAssetUrl) + '" alt="' + escapeHtml(emoji) + '" onerror="if(!this.src.includes(\'-fe0f\') && !this.dataset.triedFe0f){this.dataset.triedFe0f=true;this.src=this.src.replace(\'.png\',\'-fe0f.png\');}else if(this.src.includes(\'-fe0f\') && !this.dataset.triedNoFe0f){this.dataset.triedNoFe0f=true;this.src=this.src.replace(\'-fe0f.png\',\'.png\');}else{this.outerHTML=this.alt;}" loading="lazy" decoding="async" draggable="false" />';
+          return '<img class="call-fingerprint-emoji" data-emoji-hint="' + escapeHtml(emojiHint) + '" src="' + escapeHtml(emojiAssetUrl) + '" alt="' + escapeHtml(emoji) + '" onerror=\'if(!/-fe0f/.test(this.src) && !this.dataset.triedFe0f){this.dataset.triedFe0f=true;this.src=this.src.replace(/[.]png$/,"-fe0f.png");}else if(/-fe0f/.test(this.src) && !this.dataset.triedNoFe0f){this.dataset.triedNoFe0f=true;this.src=this.src.replace(/-fe0f[.]png$/,".png");}else{this.outerHTML=this.alt;}\' loading="lazy" decoding="async" draggable="false" />';
         }).join("");
       };
 
@@ -2580,6 +3467,217 @@
         } catch {}
       };
       disableSystemMediaSessionControls();
+
+      const clampVoiceLevel = (value) => Math.max(0, Math.min(1, Number(value) || 0));
+      const setCallVoiceLevel = (nextLevel) => {
+        const level = Number.isFinite(nextLevel) ? Math.max(0, Math.min(1, nextLevel)) : 0;
+        if (callModal?.style) {
+          callModal.style.setProperty("--call-voice-level", String(level));
+        }
+        if (callMiniCard?.style) {
+          callMiniCard.style.setProperty("--call-voice-level", String(level));
+        }
+      };
+      const stopCallVoiceMeter = () => {
+        if (callVoiceMeterRaf) {
+          window.cancelAnimationFrame(callVoiceMeterRaf);
+          callVoiceMeterRaf = 0;
+        }
+        try {
+          callVoiceMeterSource?.disconnect();
+        } catch {}
+        try {
+          callVoiceMeterAnalyser?.disconnect();
+        } catch {}
+        callVoiceMeterSource = null;
+        callVoiceMeterAnalyser = null;
+        callVoiceMeterData = null;
+        if (callVoiceMeterContext) {
+          try {
+            if (callVoiceMeterContext.state !== "closed") {
+              void callVoiceMeterContext.close();
+            }
+          } catch {}
+        }
+        callVoiceMeterContext = null;
+        setCallVoiceLevel(0);
+      };
+      const stopGroupLocalVoiceMeter = () => {
+        if (groupLocalVoiceMeterTimer) {
+          window.clearInterval(groupLocalVoiceMeterTimer);
+          groupLocalVoiceMeterTimer = null;
+        }
+        try {
+          groupLocalVoiceMeterSource?.disconnect();
+        } catch {}
+        try {
+          groupLocalVoiceMeterAnalyser?.disconnect();
+        } catch {}
+        groupLocalVoiceMeterSource = null;
+        groupLocalVoiceMeterAnalyser = null;
+        groupLocalVoiceMeterData = null;
+        if (groupLocalVoiceMeterContext) {
+          try {
+            if (groupLocalVoiceMeterContext.state !== "closed") {
+              void groupLocalVoiceMeterContext.close();
+            }
+          } catch {}
+        }
+        groupLocalVoiceMeterContext = null;
+        groupLocalVoiceLastSpeaking = false;
+        groupLocalVoiceLastPresenceSentAt = 0;
+        groupLocalVoiceLastLevel = 0;
+        groupLocalVoiceLastLevelSent = 0;
+        groupLocalVoiceLastUiLevel = 0;
+      };
+      const startGroupLocalVoiceMeter = (call) => {
+        stopGroupLocalVoiceMeter();
+        if (!call || call.mode !== "group" || !call.localStream || typeof window.AudioContext !== "function") {
+          return;
+        }
+        try {
+          const context = new window.AudioContext();
+          const analyser = context.createAnalyser();
+          analyser.fftSize = 512;
+          analyser.smoothingTimeConstant = 0.72;
+          const data = new Uint8Array(analyser.fftSize);
+          const source = context.createMediaStreamSource(call.localStream);
+          source.connect(analyser);
+          groupLocalVoiceMeterContext = context;
+          groupLocalVoiceMeterAnalyser = analyser;
+          groupLocalVoiceMeterSource = source;
+          groupLocalVoiceMeterData = data;
+          groupLocalVoiceMeterTimer = window.setInterval(() => {
+            if (!activeCall || activeCall.mode !== "group" || activeCall.callId !== call.callId) {
+              stopGroupLocalVoiceMeter();
+              return;
+            }
+            let peak = 0;
+            if (!activeCall.isMuted && groupLocalVoiceMeterAnalyser && groupLocalVoiceMeterData) {
+              try {
+                groupLocalVoiceMeterAnalyser.getByteTimeDomainData(groupLocalVoiceMeterData);
+                for (let index = 0; index < groupLocalVoiceMeterData.length; index += 1) {
+                  const amplitude = Math.abs((groupLocalVoiceMeterData[index] - 128) / 128);
+                  if (amplitude > peak) {
+                    peak = amplitude;
+                  }
+                }
+              } catch {}
+            }
+            const normalizedVoiceLevel = activeCall.isMuted
+              ? 0
+              : clampVoiceLevel(Math.max(0, Math.min(1, (peak - 0.012) * 3.45)));
+            const isSpeakingNow = !activeCall.isMuted;
+            const speakingChanged = isSpeakingNow !== groupLocalVoiceLastSpeaking;
+            groupLocalVoiceLastSpeaking = isSpeakingNow;
+            groupLocalVoiceLastLevel = normalizedVoiceLevel;
+            const levelChangedForUi = Math.abs(normalizedVoiceLevel - groupLocalVoiceLastUiLevel) > 0.045;
+            if (levelChangedForUi) {
+              groupLocalVoiceLastUiLevel = normalizedVoiceLevel;
+            }
+            upsertGroupParticipant(
+              activeCall,
+              currentUserId,
+              currentUserDisplayName || workspaceUserName.textContent || "You",
+              Boolean(activeCall.isMuted),
+              isSpeakingNow,
+              normalizedVoiceLevel
+            );
+            const state = groupCallStateByDialog.get(activeCall.dialogId);
+            if (state) {
+              if (!(state.participantIds instanceof Set)) {
+                state.participantIds = new Set();
+              }
+              state.participantIds.add(currentUserId);
+              if (state.participantLastSeenAtMap instanceof Map) {
+                state.participantLastSeenAtMap.set(currentUserId, Date.now());
+              }
+              state.participantCount = state.participantIds.size;
+              groupCallStateByDialog.set(activeCall.dialogId, state);
+            }
+            const nowTs = Date.now();
+            const levelChangedForPresence = Math.abs(normalizedVoiceLevel - groupLocalVoiceLastLevelSent) > 0.08;
+            if (speakingChanged || levelChangedForPresence || (nowTs - groupLocalVoiceLastPresenceSentAt) > 820) {
+              groupLocalVoiceLastPresenceSentAt = nowTs;
+              groupLocalVoiceLastLevelSent = normalizedVoiceLevel;
+              sendCallRealtime({
+                type: "call_presence",
+                mode: "group",
+                callId: activeCall.callId,
+                dialogId: activeCall.dialogId,
+                dialogPublicId: activeCall.dialogPublicId,
+                participantUserId: currentUserId,
+                participantName: currentUserDisplayName || workspaceUserName.textContent || "You",
+                isMuted: Boolean(activeCall.isMuted),
+                isSpeaking: isSpeakingNow,
+                voiceLevel: normalizedVoiceLevel
+              });
+            }
+            if (activeCall.mode === "group") {
+              setCallVoiceLevel(activeCall.isMuted ? 0.06 : Math.max(0.12, normalizedVoiceLevel));
+            }
+            if (speakingChanged || levelChangedForUi) {
+              syncCallUi();
+            }
+          }, 220);
+        } catch (error) {
+          warnCall("group_local_voice_meter_start_failed", {
+            error: error instanceof Error ? error.message : String(error)
+          });
+        }
+      };
+      const startCallVoiceMeter = (stream) => {
+        stopCallVoiceMeter();
+        if (!stream || typeof window.AudioContext !== "function") {
+          return;
+        }
+
+        try {
+          const context = new window.AudioContext();
+          const analyser = context.createAnalyser();
+          analyser.fftSize = 512;
+          analyser.smoothingTimeConstant = 0.78;
+          const data = new Uint8Array(analyser.fftSize);
+          const source = context.createMediaStreamSource(stream);
+          source.connect(analyser);
+
+          callVoiceMeterContext = context;
+          callVoiceMeterAnalyser = analyser;
+          callVoiceMeterSource = source;
+          callVoiceMeterData = data;
+
+          const tick = () => {
+            if (!callVoiceMeterAnalyser || !callVoiceMeterData) {
+              return;
+            }
+            try {
+              callVoiceMeterAnalyser.getByteTimeDomainData(callVoiceMeterData);
+              let peak = 0;
+              for (let index = 0; index < callVoiceMeterData.length; index += 1) {
+                const amplitude = Math.abs((callVoiceMeterData[index] - 128) / 128);
+                if (amplitude > peak) {
+                  peak = amplitude;
+                }
+              }
+              const normalized = Math.max(0, Math.min(1, (peak - 0.015) * 3.2));
+              setCallVoiceLevel(normalized);
+            } catch {
+              setCallVoiceLevel(0);
+            }
+            callVoiceMeterRaf = window.requestAnimationFrame(tick);
+          };
+          callVoiceMeterRaf = window.requestAnimationFrame(tick);
+        } catch (error) {
+          warnCall("voice_meter_start_failed", {
+            error: error instanceof Error ? error.message : String(error)
+          });
+          setCallVoiceLevel(0);
+        }
+      };
+
+
+
+
       const groupCallStateByDialog = new Map();
       const postedGroupStartByDialog = new Map();
       let groupCallPresenceHeartbeatTimer = null;
@@ -2919,701 +4017,8 @@
       let groupLocalVoiceLastLevel = 0;
       let groupLocalVoiceLastLevelSent = 0;
       let groupLocalVoiceLastUiLevel = 0;
-      const clampVoiceLevel = (value) => Math.max(0, Math.min(1, Number(value) || 0));
-      const setCallVoiceLevel = (nextLevel) => {
-        const level = Number.isFinite(nextLevel) ? Math.max(0, Math.min(1, nextLevel)) : 0;
-        if (callModal?.style) {
-          callModal.style.setProperty("--call-voice-level", String(level));
-        }
-        if (callMiniCard?.style) {
-          callMiniCard.style.setProperty("--call-voice-level", String(level));
-        }
-      };
-      const stopCallVoiceMeter = () => {
-        if (callVoiceMeterRaf) {
-          window.cancelAnimationFrame(callVoiceMeterRaf);
-          callVoiceMeterRaf = 0;
-        }
-        try {
-          callVoiceMeterSource?.disconnect();
-        } catch {}
-        try {
-          callVoiceMeterAnalyser?.disconnect();
-        } catch {}
-        callVoiceMeterSource = null;
-        callVoiceMeterAnalyser = null;
-        callVoiceMeterData = null;
-        if (callVoiceMeterContext) {
-          try {
-            if (callVoiceMeterContext.state !== "closed") {
-              void callVoiceMeterContext.close();
-            }
-          } catch {}
-        }
-        callVoiceMeterContext = null;
-        setCallVoiceLevel(0);
-      };
-      const stopGroupLocalVoiceMeter = () => {
-        if (groupLocalVoiceMeterTimer) {
-          window.clearInterval(groupLocalVoiceMeterTimer);
-          groupLocalVoiceMeterTimer = null;
-        }
-        try {
-          groupLocalVoiceMeterSource?.disconnect();
-        } catch {}
-        try {
-          groupLocalVoiceMeterAnalyser?.disconnect();
-        } catch {}
-        groupLocalVoiceMeterSource = null;
-        groupLocalVoiceMeterAnalyser = null;
-        groupLocalVoiceMeterData = null;
-        if (groupLocalVoiceMeterContext) {
-          try {
-            if (groupLocalVoiceMeterContext.state !== "closed") {
-              void groupLocalVoiceMeterContext.close();
-            }
-          } catch {}
-        }
-        groupLocalVoiceMeterContext = null;
-        groupLocalVoiceLastSpeaking = false;
-        groupLocalVoiceLastPresenceSentAt = 0;
-        groupLocalVoiceLastLevel = 0;
-        groupLocalVoiceLastLevelSent = 0;
-        groupLocalVoiceLastUiLevel = 0;
-      };
-      const startGroupLocalVoiceMeter = (call) => {
-        stopGroupLocalVoiceMeter();
-        if (!call || call.mode !== "group" || !call.localStream || typeof window.AudioContext !== "function") {
-          return;
-        }
-        try {
-          const context = new window.AudioContext();
-          const analyser = context.createAnalyser();
-          analyser.fftSize = 512;
-          analyser.smoothingTimeConstant = 0.72;
-          const data = new Uint8Array(analyser.fftSize);
-          const source = context.createMediaStreamSource(call.localStream);
-          source.connect(analyser);
-          groupLocalVoiceMeterContext = context;
-          groupLocalVoiceMeterAnalyser = analyser;
-          groupLocalVoiceMeterSource = source;
-          groupLocalVoiceMeterData = data;
-          groupLocalVoiceMeterTimer = window.setInterval(() => {
-            if (!activeCall || activeCall.mode !== "group" || activeCall.callId !== call.callId) {
-              stopGroupLocalVoiceMeter();
-              return;
-            }
-            let peak = 0;
-            if (!activeCall.isMuted && groupLocalVoiceMeterAnalyser && groupLocalVoiceMeterData) {
-              try {
-                groupLocalVoiceMeterAnalyser.getByteTimeDomainData(groupLocalVoiceMeterData);
-                for (let index = 0; index < groupLocalVoiceMeterData.length; index += 1) {
-                  const amplitude = Math.abs((groupLocalVoiceMeterData[index] - 128) / 128);
-                  if (amplitude > peak) {
-                    peak = amplitude;
-                  }
-                }
-              } catch {}
-            }
-            const normalizedVoiceLevel = activeCall.isMuted
-              ? 0
-              : clampVoiceLevel(Math.max(0, Math.min(1, (peak - 0.012) * 3.45)));
-            const isSpeakingNow = !activeCall.isMuted;
-            const speakingChanged = isSpeakingNow !== groupLocalVoiceLastSpeaking;
-            groupLocalVoiceLastSpeaking = isSpeakingNow;
-            groupLocalVoiceLastLevel = normalizedVoiceLevel;
-            const levelChangedForUi = Math.abs(normalizedVoiceLevel - groupLocalVoiceLastUiLevel) > 0.045;
-            if (levelChangedForUi) {
-              groupLocalVoiceLastUiLevel = normalizedVoiceLevel;
-            }
-            upsertGroupParticipant(
-              activeCall,
-              currentUserId,
-              currentUserDisplayName || workspaceUserName.textContent || "You",
-              Boolean(activeCall.isMuted),
-              isSpeakingNow,
-              normalizedVoiceLevel
-            );
-            const state = groupCallStateByDialog.get(activeCall.dialogId);
-            if (state) {
-              if (!(state.participantIds instanceof Set)) {
-                state.participantIds = new Set();
-              }
-              state.participantIds.add(currentUserId);
-              if (state.participantLastSeenAtMap instanceof Map) {
-                state.participantLastSeenAtMap.set(currentUserId, Date.now());
-              }
-              state.participantCount = state.participantIds.size;
-              groupCallStateByDialog.set(activeCall.dialogId, state);
-            }
-            const nowTs = Date.now();
-            const levelChangedForPresence = Math.abs(normalizedVoiceLevel - groupLocalVoiceLastLevelSent) > 0.08;
-            if (speakingChanged || levelChangedForPresence || (nowTs - groupLocalVoiceLastPresenceSentAt) > 820) {
-              groupLocalVoiceLastPresenceSentAt = nowTs;
-              groupLocalVoiceLastLevelSent = normalizedVoiceLevel;
-              sendCallRealtime({
-                type: "call_presence",
-                mode: "group",
-                callId: activeCall.callId,
-                dialogId: activeCall.dialogId,
-                dialogPublicId: activeCall.dialogPublicId,
-                participantUserId: currentUserId,
-                participantName: currentUserDisplayName || workspaceUserName.textContent || "You",
-                isMuted: Boolean(activeCall.isMuted),
-                isSpeaking: isSpeakingNow,
-                voiceLevel: normalizedVoiceLevel
-              });
-            }
-            if (activeCall.mode === "group") {
-              setCallVoiceLevel(activeCall.isMuted ? 0.06 : Math.max(0.12, normalizedVoiceLevel));
-            }
-            if (speakingChanged || levelChangedForUi) {
-              syncCallUi();
-            }
-          }, 220);
-        } catch (error) {
-          warnCall("group_local_voice_meter_start_failed", {
-            error: error instanceof Error ? error.message : String(error)
-          });
-        }
-      };
-      const startCallVoiceMeter = (stream) => {
-        stopCallVoiceMeter();
-        if (!stream || typeof window.AudioContext !== "function") {
-          return;
-        }
 
-        try {
-          const context = new window.AudioContext();
-          const analyser = context.createAnalyser();
-          analyser.fftSize = 512;
-          analyser.smoothingTimeConstant = 0.78;
-          const data = new Uint8Array(analyser.fftSize);
-          const source = context.createMediaStreamSource(stream);
-          source.connect(analyser);
 
-          callVoiceMeterContext = context;
-          callVoiceMeterAnalyser = analyser;
-          callVoiceMeterSource = source;
-          callVoiceMeterData = data;
-
-          const tick = () => {
-            if (!callVoiceMeterAnalyser || !callVoiceMeterData) {
-              return;
-            }
-            try {
-              callVoiceMeterAnalyser.getByteTimeDomainData(callVoiceMeterData);
-              let peak = 0;
-              for (let index = 0; index < callVoiceMeterData.length; index += 1) {
-                const amplitude = Math.abs((callVoiceMeterData[index] - 128) / 128);
-                if (amplitude > peak) {
-                  peak = amplitude;
-                }
-              }
-              const normalized = Math.max(0, Math.min(1, (peak - 0.015) * 3.2));
-              setCallVoiceLevel(normalized);
-            } catch {
-              setCallVoiceLevel(0);
-            }
-            callVoiceMeterRaf = window.requestAnimationFrame(tick);
-          };
-          callVoiceMeterRaf = window.requestAnimationFrame(tick);
-        } catch (error) {
-          warnCall("voice_meter_start_failed", {
-            error: error instanceof Error ? error.message : String(error)
-          });
-          setCallVoiceLevel(0);
-        }
-      };
-
-      const parseRtcIceServers = () => {
-        const normalizeUrlsList = (value) => {
-          const list = Array.isArray(value) ? value : [value];
-          return list
-            .map((entry) => typeof entry === "string" ? entry.trim() : "")
-            .filter(Boolean);
-        };
-        const isValidIceUrl = (value) => {
-          if (typeof value !== "string") {
-            return false;
-          }
-          const raw = value.trim();
-          if (!raw) {
-            return false;
-          }
-          // Accept stun/turn/turns with either hostname or IPv4 and optional
-          // port/query. Reject malformed values like "stun::3478".
-          return /^(stun|turn|turns):[a-z0-9.-]+(?::\d{1,5})?(?:\?.*)?$/i.test(raw);
-        };
-        const hasTurnUrl = (value) => normalizeUrlsList(value).some((entry) => /^turns?:/i.test(entry));
-        const isValidTurnAuth = (username, credential) =>
-          typeof username === "string"
-          && username.trim().length > 0
-          && typeof credential === "string"
-          && credential.trim().length > 0;
-        const defaultTurnHost = (window.location && window.location.hostname) ? window.location.hostname : "89.35.130.157";
-        const fallback = [
-          { urls: "stun:" + defaultTurnHost + ":3478" },
-          {
-            urls: [
-              "turn:" + defaultTurnHost + ":3478?transport=udp",
-              "turn:" + defaultTurnHost + ":3478?transport=tcp"
-            ],
-            username: "thegrapht_turn",
-            credential: "thegrapht_turn_pass"
-          }
-        ];
-
-        if (!rtcIceServersRaw) {
-          logCall("ice_servers_fallback_default", { fallback });
-          return fallback;
-        }
-
-        try {
-          const parsed = JSON.parse(rtcIceServersRaw);
-          if (!Array.isArray(parsed)) {
-            return fallback;
-          }
-
-          const normalized = parsed
-            .filter((item) => item && typeof item === "object")
-            .map((item) => {
-              const urls = item.urls;
-              const username = typeof item.username === "string" ? item.username.trim() : "";
-              const credential = typeof item.credential === "string" ? item.credential.trim() : "";
-
-              if (typeof urls === "string" || Array.isArray(urls)) {
-                const filteredUrls = normalizeUrlsList(urls).filter((entry) => isValidIceUrl(entry));
-                if (!filteredUrls.length) {
-                  warnCall("dropping_invalid_ice_server_urls", { urls });
-                  return null;
-                }
-
-                if (hasTurnUrl(filteredUrls) && !isValidTurnAuth(username, credential)) {
-                  warnCall("dropping_invalid_turn_server_missing_credentials", { urls });
-                  return null;
-                }
-
-                return {
-                  urls: Array.isArray(urls) ? filteredUrls : filteredUrls[0],
-                  ...(username ? { username } : {}),
-                  ...(credential ? { credential } : {})
-                };
-              }
-
-              return null;
-            })
-            .filter(Boolean);
-
-          const resolved = normalized.length ? normalized : fallback;
-          logCall("ice_servers_resolved", { resolved });
-          return resolved;
-        } catch {
-          warnCall("ice_servers_parse_failed_using_fallback", { rtcIceServersRaw });
-          return fallback;
-        }
-      };
-
-      const setCallError = (message, details = {}) => {
-        if (!activeCall) {
-          return;
-        }
-
-        activeCall.lastError = message;
-        activeCall.lastErrorAt = Date.now();
-        errCall("call_error", {
-          callId: activeCall.callId,
-          status: activeCall.status,
-          message,
-          ...details
-        });
-      };
-
-      const getCallErrorForUi = (message) => {
-        const normalized = typeof message === "string" ? message.trim() : "";
-        if (!normalized) {
-          return "";
-        }
-
-        if (/^ICE\s+\d+:/i.test(normalized)) {
-          return "network issue, retrying connection";
-        }
-
-        return normalized.length > 120 ? (normalized.slice(0, 117) + "...") : normalized;
-      };
-
-      const ensureOutgoingCallRingtoneNode = () => {
-        if (outgoingCallRingtoneNode) {
-          return outgoingCallRingtoneNode;
-        }
-
-        outgoingCallRingtoneNode = new Audio("/outgoing.mp3");
-        outgoingCallRingtoneNode.loop = false;
-        outgoingCallRingtoneNode.preload = "auto";
-        return outgoingCallRingtoneNode;
-      };
-
-      const ensureIncomingCallRingtoneNode = () => {
-        if (incomingCallRingtoneNode) {
-          return incomingCallRingtoneNode;
-        }
-
-        incomingCallRingtoneNode = new Audio("/incoming.mp3");
-        incomingCallRingtoneNode.loop = true;
-        incomingCallRingtoneNode.preload = "auto";
-        return incomingCallRingtoneNode;
-      };
-
-      const startOutgoingCallRingtone = () => {
-        const node = ensureOutgoingCallRingtoneNode();
-
-        try {
-          node.currentTime = 0;
-          const playPromise = node.play();
-          if (playPromise?.catch) {
-            playPromise.catch(() => {});
-          }
-        } catch {}
-      };
-
-      const startIncomingCallRingtone = () => {
-        const node = ensureIncomingCallRingtoneNode();
-
-        try {
-          node.currentTime = 0;
-          const playPromise = node.play();
-          if (playPromise?.catch) {
-            playPromise.catch(() => {});
-          }
-        } catch {}
-      };
-
-      const claimCallRingtonePlayback = (callId) => {
-        if (!callId) {
-          return false;
-        }
-        if (typeof claimNotificationDelivery === "function") {
-          return claimNotificationDelivery("call_ringtone", callId, 20000);
-        }
-        return true;
-      };
-
-      const stopCallRingtone = () => {
-        [outgoingCallRingtoneNode, incomingCallRingtoneNode].forEach((node) => {
-          if (!node) {
-            return;
-          }
-          try {
-            node.pause();
-            node.currentTime = 0;
-          } catch {}
-        });
-      };
-
-      const buildCallMessageMarker = (kind, durationSeconds = 0) => {
-        const safeDuration = Math.max(0, Math.floor(durationSeconds || 0));
-        return kind === "ended"
-          ? "[[call:" + kind + ":" + safeDuration + "]]"
-          : "[[call:" + kind + "]]";
-      };
-
-      const clearCallTimers = () => {
-        if (callTickTimer) {
-          window.clearInterval(callTickTimer);
-          callTickTimer = null;
-        }
-        stopGroupCallPresenceHeartbeat();
-        stopGroupLocalVoiceMeter();
-
-        if (callTimeoutTimer) {
-          window.clearTimeout(callTimeoutTimer);
-          callTimeoutTimer = null;
-        }
-
-        stopCallRingtone();
-      };
-
-      const armCallSetupTimeout = (callId, reason = "missed") => {
-        if (callTimeoutTimer) {
-          window.clearTimeout(callTimeoutTimer);
-        }
-
-        logCall("setup_timeout_armed", { callId, reason, timeoutMs: CALL_SETUP_TIMEOUT_MS });
-
-        callTimeoutTimer = window.setTimeout(() => {
-          if (!activeCall || activeCall.callId !== callId || activeCall.status === "active") {
-            return;
-          }
-
-          if (reason === "no_connect") {
-            setCallError("Failed to establish P2P connection (ICE timeout).", {
-              connectionState: activeCall.peerConnection?.connectionState,
-              iceConnectionState: activeCall.peerConnection?.iceConnectionState,
-              iceGatheringState: activeCall.peerConnection?.iceGatheringState
-            });
-            showToast("Failed to establish call connection (ICE timeout).", "error");
-          }
-
-          warnCall("setup_timeout_fired", {
-            callId,
-            reason,
-            status: activeCall.status,
-            connectionState: activeCall.peerConnection?.connectionState,
-            iceConnectionState: activeCall.peerConnection?.iceConnectionState,
-            iceGatheringState: activeCall.peerConnection?.iceGatheringState
-          });
-
-          sendCallRealtime({
-            type: "call_end",
-            callId: activeCall.callId,
-            dialogId: activeCall.dialogId,
-            dialogPublicId: activeCall.dialogPublicId,
-            reason,
-            summaryBody: buildCallMessageMarker("missed")
-          });
-
-          void finishActiveCall({
-            summaryBody: buildCallMessageMarker("missed"),
-            remoteEnded: false
-          });
-        }, CALL_SETUP_TIMEOUT_MS);
-      };
-
-      const buildAnimatedDots = () => {
-        const phase = (Math.floor(Date.now() / 420) % 3) + 1;
-        return ".".repeat(phase);
-      };
-
-      const getCallElapsedSeconds = () => {
-        if (!activeCall) {
-          return 0;
-        }
-        if (activeCall.mode === "group") {
-          return getGroupCallElapsedSecondsForCall(activeCall);
-        }
-        if (!activeCall.connectedAt) {
-          return 0;
-        }
-        return Math.max(0, Math.floor((Date.now() - activeCall.connectedAt) / 1000));
-      };
-      const CLOSED_CALL_COOLDOWN_MS = 25000;
-      const CALL_ACCEPT_BROADCAST_STORAGE_KEY = "thegrapht_call_accept_broadcast";
-      const recentlyClosedCalls = new Map();
-      const pruneRecentlyClosedCalls = () => {
-        const now = Date.now();
-        for (const [key, expiresAt] of recentlyClosedCalls.entries()) {
-          if (!Number.isFinite(expiresAt) || expiresAt <= now) {
-            recentlyClosedCalls.delete(key);
-          }
-        }
-      };
-      const buildClosedCallKey = (dialogId, callId) => {
-        const safeDialogId = String(dialogId || "").trim();
-        const safeCallId = String(callId || "").trim();
-        if (!safeDialogId || !safeCallId) {
-          return "";
-        }
-        return safeDialogId + "|" + safeCallId;
-      };
-      const rememberRecentlyClosedCall = (dialogId, callId) => {
-        const key = buildClosedCallKey(dialogId, callId);
-        if (!key) {
-          return;
-        }
-        recentlyClosedCalls.set(key, Date.now() + CLOSED_CALL_COOLDOWN_MS);
-      };
-      const isRecentlyClosedCall = (dialogId, callId) => {
-        pruneRecentlyClosedCalls();
-        const key = buildClosedCallKey(dialogId, callId);
-        if (!key) {
-          return false;
-        }
-        return recentlyClosedCalls.has(key);
-      };
-      const broadcastCallAcceptedAcrossTabs = (call) => {
-        if (!call?.callId || !call?.dialogId) {
-          return;
-        }
-        try {
-          window.localStorage.setItem(CALL_ACCEPT_BROADCAST_STORAGE_KEY, JSON.stringify({
-            callId: String(call.callId || ""),
-            dialogId: String(call.dialogId || ""),
-            acceptedAt: Date.now()
-          }));
-        } catch {}
-      };
-
-      const getCallScreenOwnerName = () => {
-        if (!activeCall) {
-          return "";
-        }
-        if (activeCall.screenEnabled && activeCall.screenOwnerUserId === currentUserId) {
-          return currentUserDisplayName || workspaceUserName.textContent || "You";
-        }
-        if (activeCall.remoteScreenSharing && activeCall.screenOwnerUserId && activeCall.screenOwnerUserId !== currentUserId) {
-          return activeCall.peerName || "Remote user";
-        }
-        return activeCall.peerName || currentUserDisplayName || workspaceUserName.textContent || "User";
-      };
-      const ensureScreenOverlayNodes = () => {
-        if (!(callModal instanceof HTMLElement)) {
-          return null;
-        }
-        let overlay = callModal.querySelector(".call-screen-overlay");
-        if (!(overlay instanceof HTMLElement)) {
-          overlay = document.createElement("div");
-          overlay.className = "call-screen-overlay";
-          overlay.setAttribute("aria-hidden", "true");
-          overlay.innerHTML = ""
-            + '<div class="call-screen-overlay-backdrop" data-overlay-dismiss="true"></div>'
-            + '<div class="call-screen-overlay-content">'
-            +   '<div class="call-screen-overlay-title"></div>'
-            +   '<div class="call-screen-overlay-stage" data-overlay-dismiss="true"></div>'
-            +   '<div class="call-screen-overlay-hud">'
-            +     '<span class="material-symbols-rounded" aria-hidden="true">screen_share</span>'
-            +     '<span class="call-screen-overlay-owner"></span>'
-            +   '</div>'
-            + '</div>';
-          callModal.appendChild(overlay);
-        }
-        const stage = overlay.querySelector(".call-screen-overlay-stage");
-        const title = overlay.querySelector(".call-screen-overlay-title");
-        const owner = overlay.querySelector(".call-screen-overlay-owner");
-        if (!(stage instanceof HTMLElement) || !(title instanceof HTMLElement) || !(owner instanceof HTMLElement)) {
-          return null;
-        }
-        return { overlay, stage, title, owner };
-      };
-      const closeExpandedScreenPreview = () => {
-        if (!(callModal instanceof HTMLElement)) {
-          return;
-        }
-        const nodes = ensureScreenOverlayNodes();
-        if (!nodes) {
-          return;
-        }
-        nodes.overlay.classList.remove("open");
-        nodes.overlay.setAttribute("aria-hidden", "true");
-        nodes.stage.innerHTML = "";
-      };
-      const openExpandedScreenPreview = () => {
-        if (!activeCall || activeCall.mode === "group") {
-          return;
-        }
-        const sourceVideo = document.getElementById("remote-screen-video");
-        const sourceStream = sourceVideo instanceof HTMLVideoElement ? sourceVideo.srcObject : null;
-        if (!(sourceStream instanceof MediaStream)) {
-          return;
-        }
-        const nodes = ensureScreenOverlayNodes();
-        if (!nodes) {
-          return;
-        }
-        const ownerName = getCallScreenOwnerName();
-        nodes.title.textContent = "Screen sharing: " + ownerName;
-        nodes.owner.textContent = ownerName;
-        nodes.stage.innerHTML = "";
-        const expandedVideo = document.createElement("video");
-        expandedVideo.className = "call-screen-overlay-video";
-        expandedVideo.setAttribute("data-overlay-dismiss", "true");
-        expandedVideo.autoplay = true;
-        expandedVideo.playsInline = true;
-        expandedVideo.srcObject = sourceStream;
-        nodes.stage.appendChild(expandedVideo);
-        nodes.overlay.classList.add("open");
-        nodes.overlay.setAttribute("aria-hidden", "false");
-        try {
-          const playPromise = expandedVideo.play();
-          if (playPromise?.catch) {
-            playPromise.catch(() => {});
-          }
-        } catch {}
-      };
-
-      const buildCallVideoDebugDetails = (extra = {}) => {
-        const remoteVideo = document.getElementById("remote-screen-video");
-        const placeholder = document.getElementById("call-main-placeholder");
-        const localPreview = document.getElementById("local-video-preview");
-        const modalClassList = callModal?.classList ? Array.from(callModal.classList) : [];
-        const remoteElementStream = remoteVideo instanceof HTMLVideoElement ? remoteVideo.srcObject : null;
-        const localPreviewStream = localPreview instanceof HTMLVideoElement ? localPreview.srcObject : null;
-        return {
-          callId: activeCall?.callId || "",
-          status: activeCall?.status || "",
-          direction: activeCall?.direction || "",
-          elapsed: getCallElapsedSeconds(),
-          screenEnabled: Boolean(activeCall?.screenEnabled),
-          remoteScreenSharing: Boolean(activeCall?.remoteScreenSharing),
-          screenOwnerUserId: activeCall?.screenOwnerUserId || "",
-          cameraEnabled: Boolean(activeCall?.cameraEnabled),
-          hasActiveRemoteVideoStream: activeCall?.remoteVideoStream instanceof MediaStream,
-          activeRemoteVideoStream: getDebugStreamState(activeCall?.remoteVideoStream),
-          localVisualStream: getDebugStreamState(activeCall?.localVisualStream),
-          remoteElementStream: getDebugStreamState(remoteElementStream),
-          localPreviewStream: getDebugStreamState(localPreviewStream),
-          remoteVideoElement: remoteVideo instanceof HTMLVideoElement ? {
-            hidden: Boolean(remoteVideo.hidden),
-            display: remoteVideo.style.display || "",
-            className: remoteVideo.className || "",
-            paused: Boolean(remoteVideo.paused),
-            readyState: remoteVideo.readyState,
-            videoWidth: remoteVideo.videoWidth,
-            videoHeight: remoteVideo.videoHeight,
-            currentTime: Number.isFinite(remoteVideo.currentTime) ? Number(remoteVideo.currentTime.toFixed(2)) : 0
-          } : null,
-          placeholder: placeholder instanceof HTMLElement ? {
-            hidden: Boolean(placeholder.hidden),
-            display: placeholder.style.display || ""
-          } : null,
-          modal: {
-            classList: modalClassList,
-            screenShareActive: modalClassList.includes("screen-share-active"),
-            hasDirectVisuals: modalClassList.includes("has-direct-visuals"),
-            hasScreenShare: modalClassList.includes("has-screen-share"),
-            directVisualLayout: callModal?.dataset?.directVisualLayout || ""
-          },
-          peerConnection: activeCall?.peerConnection ? {
-            connectionState: activeCall.peerConnection.connectionState,
-            iceConnectionState: activeCall.peerConnection.iceConnectionState,
-            signalingState: activeCall.peerConnection.signalingState
-          } : null,
-          ...extra
-        };
-      };
-
-      const logCallVideoDebug = (event, details = {}) => {
-        logCall("video_debug_" + event, buildCallVideoDebugDetails(details));
-      };
-
-      const logCallVideoDebugSnapshot = (source, { force = false } = {}) => {
-        if (!activeCall || activeCall.mode === "group") {
-          return;
-        }
-        const elapsed = getCallElapsedSeconds();
-        const remoteTrack = activeCall.remoteVideoStream instanceof MediaStream
-          ? activeCall.remoteVideoStream.getVideoTracks()[0] || null
-          : null;
-        const signature = [
-          elapsed,
-          activeCall.screenEnabled ? 1 : 0,
-          activeCall.remoteScreenSharing ? 1 : 0,
-          activeCall.cameraEnabled ? 1 : 0,
-          remoteTrack?.id || "",
-          remoteTrack?.muted ? 1 : 0,
-          remoteTrack?.readyState || "",
-          callModal?.classList?.contains("screen-share-active") ? 1 : 0,
-          callModal?.classList?.contains("has-direct-visuals") ? 1 : 0
-        ].join("|");
-        if (!force && elapsed > 20 && activeCall.__lastVideoDebugSignature === signature) {
-          return;
-        }
-        if (!force && activeCall.__lastVideoDebugSecond === elapsed && activeCall.__lastVideoDebugSignature === signature) {
-          return;
-        }
-        activeCall.__lastVideoDebugSecond = elapsed;
-        activeCall.__lastVideoDebugSignature = signature;
-        logCallVideoDebug("snapshot", { source, signature });
-      };
 
       const getDialogByIdLocal = (dialogId) => allDialogs.find((dialog) => dialog.id === dialogId) || null;
 
@@ -3950,570 +4355,6 @@
         }
       };
 
-      const createGroupPeerConnection = (call, peerUserId, peerName = "User") => {
-        if (!call || call.mode !== "group" || !peerUserId) {
-          return null;
-        }
-        if (!(call.groupPeerConnections instanceof Map)) {
-          call.groupPeerConnections = new Map();
-        }
-        const existing = call.groupPeerConnections.get(peerUserId);
-        if (existing?.peerConnection) {
-          return existing.peerConnection;
-        }
-        const iceServers = parseRtcIceServers();
-        const peerConnection = new RTCPeerConnection({
-          iceServers,
-          iceCandidatePoolSize: 10
-        });
-        if (call.localStream) {
-          call.localStream.getTracks().forEach((track) => {
-            try {
-              peerConnection.addTrack(track, call.localStream);
-            } catch {}
-          });
-        }
-        call.groupPeerConnections.set(peerUserId, {
-          peerConnection,
-          peerUserId,
-          peerName: String(peerName || "User"),
-          offerSent: false
-        });
-
-        peerConnection.onicecandidate = (event) => {
-          if (!activeCall || activeCall.mode !== "group" || activeCall.callId !== call.callId) {
-            return;
-          }
-          if (!event.candidate) {
-            return;
-          }
-          sendCallRealtime({
-            type: "call_candidate",
-            mode: "group",
-            callId: call.callId,
-            dialogId: call.dialogId,
-            dialogPublicId: call.dialogPublicId,
-            targetUserId: peerUserId,
-            candidate: event.candidate
-          });
-        };
-
-        peerConnection.ontrack = (event) => {
-          if (!activeCall || activeCall.mode !== "group" || activeCall.callId !== call.callId) {
-            return;
-          }
-          if (!(call.groupRemoteAudioNodes instanceof Map)) {
-            call.groupRemoteAudioNodes = new Map();
-          }
-          let audioNode = call.groupRemoteAudioNodes.get(peerUserId);
-          if (!audioNode) {
-            audioNode = new Audio();
-            audioNode.autoplay = true;
-            audioNode.controls = false;
-            audioNode.style.display = "none";
-            document.body.appendChild(audioNode);
-            call.groupRemoteAudioNodes.set(peerUserId, audioNode);
-          }
-          audioNode.srcObject = event.streams?.[0] || null;
-          try {
-            const playPromise = audioNode.play();
-            if (playPromise?.catch) {
-              playPromise.catch(() => {});
-            }
-          } catch {}
-        };
-
-        peerConnection.onconnectionstatechange = () => {
-          const state = peerConnection.connectionState;
-          if (state === "failed" || state === "closed" || state === "disconnected") {
-            const entry = call.groupPeerConnections.get(peerUserId);
-            if (entry?.peerConnection === peerConnection) {
-              call.groupPeerConnections.delete(peerUserId);
-            }
-          }
-        };
-
-        return peerConnection;
-      };
-
-      const maybeStartGroupPeerNegotiation = async (call, peerUserId, peerName = "User") => {
-        if (!call || call.mode !== "group" || !peerUserId || peerUserId === currentUserId) {
-          return;
-        }
-        const selfId = String(currentUserId || "");
-        const targetId = String(peerUserId || "");
-        if (!selfId || !targetId) {
-          return;
-        }
-        const shouldInitiate = selfId.localeCompare(targetId) > 0;
-        const peerConnection = createGroupPeerConnection(call, peerUserId, peerName);
-        if (!peerConnection) {
-          return;
-        }
-        const entry = call.groupPeerConnections.get(peerUserId);
-        if (!shouldInitiate || entry?.offerSent) {
-          return;
-        }
-        try {
-          const offer = await buildOfferWithVoiceProfile(peerConnection);
-          await peerConnection.setLocalDescription(offer);
-          entry.offerSent = true;
-          call.groupPeerConnections.set(peerUserId, entry);
-          sendCallRealtime({
-            type: "call_invite",
-            mode: "group",
-            callId: call.callId,
-            dialogId: call.dialogId,
-            dialogPublicId: call.dialogPublicId,
-            targetUserId: peerUserId,
-            callerName: currentUserDisplayName || workspaceUserName.textContent || "TheGraphT",
-            offer
-          });
-        } catch (error) {
-          warnCall("group_offer_failed", {
-            peerUserId,
-            error: error instanceof Error ? error.message : String(error)
-          });
-        }
-      };
-
-      const sendCallRealtime = (payload) => {
-        if (!realtimeSocket || realtimeSocket.readyState !== WebSocket.OPEN) {
-          warnCall("realtime_send_skipped_socket_not_open", {
-            payloadType: payload?.type,
-            readyState: realtimeSocket?.readyState
-          });
-          return;
-        }
-
-        logCall("realtime_send", {
-          payloadType: payload.type,
-          callId: payload.callId,
-          dialogId: payload.dialogId,
-          active: typeof payload.active === "boolean" ? payload.active : undefined,
-          reason: payload.reason || ""
-        });
-        realtimeSocket.send(JSON.stringify(payload));
-      };
-
-      const finishActiveCall = async ({ summaryBody = "", remoteEnded = false } = {}) => {
-        if (!activeCall) {
-          return;
-        }
-
-        logCall("finish_call", {
-          callId: activeCall.callId,
-          status: activeCall.status,
-          remoteEnded,
-          summaryBody
-        });
-        rememberRecentlyClosedCall(activeCall.dialogId, activeCall.callId);
-        clearCallTimers();
-        closeExpandedScreenPreview();
-        await stopAndReleaseCallMedia();
-        activeCall = null;
-        syncCallUi();
-      };
-
-      const loadCallDevices = async () => {
-        try {
-          const devices = await navigator.mediaDevices.enumerateDevices();
-          const inputDevices = devices.filter((device) => device.kind === "audioinput");
-          const outputDevices = devices.filter((device) => device.kind === "audiooutput");
-
-          callInputDevice.innerHTML = inputDevices.map((device, index) => (
-            '<option value="' + escapeHtml(device.deviceId) + '">' + escapeHtml(device.label || ("Microphone " + (index + 1))) + '</option>'
-          )).join("");
-
-          callOutputDevice.innerHTML = outputDevices.map((device, index) => (
-            '<option value="' + escapeHtml(device.deviceId) + '">' + escapeHtml(device.label || ("Output " + (index + 1))) + '</option>'
-          )).join("");
-        } catch {}
-      };
-
-      const createPeerConnection = (call) => {
-        const iceServers = parseRtcIceServers();
-        const peerConnection = new RTCPeerConnection({
-          iceServers,
-          iceCandidatePoolSize: 10
-        });
-        try {
-          peerConnection.addTransceiver("video", { direction: "sendrecv" });
-        } catch {}
-        logCall("pc_created", { callId: call.callId, iceServers });
-
-        peerConnection.onicecandidate = (event) => {
-          if (!activeCall || activeCall.callId !== call.callId) {
-            return;
-          }
-
-          if (!event.candidate) {
-            logCall("ice_candidate_gathering_complete", {
-              callId: call.callId,
-              iceGatheringState: peerConnection.iceGatheringState
-            });
-            return;
-          }
-
-          logCall("ice_candidate_local", {
-            callId: call.callId,
-            protocol: event.candidate.protocol,
-            type: event.candidate.type,
-            address: event.candidate.address
-          });
-
-          sendCallRealtime({
-            type: "call_candidate",
-            callId: call.callId,
-            dialogId: call.dialogId,
-            dialogPublicId: call.dialogPublicId,
-            candidate: event.candidate
-          });
-        };
-
-        peerConnection.ontrack = (event) => {
-          logCall("remote_track_received", {
-            callId: call.callId,
-            kind: event.track?.kind || "",
-            streamCount: event.streams?.length || 0,
-            track: getDebugTrackState(event.track || null),
-            streams: Array.from(event.streams || []).map(getDebugStreamState)
-          });
-          logCallVideoDebug("ontrack", {
-            incomingTrack: getDebugTrackState(event.track || null),
-            incomingStreams: Array.from(event.streams || []).map(getDebugStreamState)
-          });
-          if (!event.track) {
-            return;
-          }
-          const stream = event.streams?.[0] || new MediaStream([event.track]);
-          if (event.track?.kind === "audio") {
-            const audio = ensureRemoteAudioNode();
-            audio.srcObject = stream;
-            startCallVoiceMeter(stream);
-            try {
-              const playPromise = audio.play();
-              if (playPromise?.catch) {
-                playPromise.catch(() => {});
-              }
-            } catch {}
-            return;
-          }
-          if (event.track?.kind === "video" && activeCall && activeCall.callId === call.callId) {
-            const applyRemoteVideoTrack = () => {
-              logCallVideoDebug("remote_video_apply_attempt", {
-                incomingTrack: getDebugTrackState(event.track),
-                incomingStream: getDebugStreamState(stream)
-              });
-              if (!activeCall || activeCall.callId !== call.callId) {
-                return;
-              }
-              if (event.track.readyState === "ended" || event.track.muted) {
-                logCallVideoDebug("remote_video_apply_skipped", {
-                  reason: event.track.readyState === "ended" ? "ended" : "muted",
-                  incomingTrack: getDebugTrackState(event.track)
-                });
-                return;
-              }
-              if (activeCall.remoteVideoStream !== stream) {
-                activeCall.remoteVideoFrameReady = false;
-              }
-              activeCall.remoteVideoStream = stream;
-              // Treat a live/unmuted inbound track as frame-ready to avoid
-              // placeholder flicker while the element refreshes metadata.
-              if (event.track.readyState === "live" && !event.track.muted) {
-                activeCall.remoteVideoFrameReady = true;
-              }
-              logCallVideoDebug("remote_video_applied", {
-                incomingTrack: getDebugTrackState(event.track),
-                incomingStream: getDebugStreamState(stream)
-              });
-              syncCallVideoStage();
-            };
-            const clearRemoteVideoTrack = () => {
-              logCallVideoDebug("remote_video_clear_attempt", {
-                incomingTrack: getDebugTrackState(event.track)
-              });
-              if (!activeCall || activeCall.callId !== call.callId) {
-                return;
-              }
-              const currentStream = activeCall.remoteVideoStream;
-              const currentTrack = currentStream instanceof MediaStream
-                ? currentStream.getVideoTracks()[0] || null
-                : null;
-              if (currentTrack && currentTrack !== event.track) {
-                logCallVideoDebug("remote_video_clear_skipped", {
-                  reason: "different_current_track",
-                  incomingTrack: getDebugTrackState(event.track),
-                  currentTrack: getDebugTrackState(currentTrack)
-                });
-                return;
-              }
-              activeCall.remoteVideoStream = null;
-              activeCall.remoteVideoFrameReady = false;
-              activeCall.remoteVisualKind = "none";
-              if (activeCall.remoteScreenSharing) {
-                activeCall.remoteScreenSharing = false;
-                activeCall.screenOwnerUserId = "";
-              }
-              logCallVideoDebug("remote_video_cleared", {
-                incomingTrack: getDebugTrackState(event.track)
-              });
-              syncCallVideoStage();
-              syncCallUi();
-            };
-            const clearRemoteVideoTrackWithGrace = () => {
-              if (!activeCall || activeCall.callId !== call.callId) {
-                return;
-              }
-              if (activeCall.remoteVideoMuteGraceTimer) {
-                window.clearTimeout(activeCall.remoteVideoMuteGraceTimer);
-              }
-              activeCall.remoteVideoMuteGraceTimer = window.setTimeout(() => {
-                if (!activeCall || activeCall.callId !== call.callId) {
-                  return;
-                }
-                activeCall.remoteVideoMuteGraceTimer = null;
-                const currentStream = activeCall.remoteVideoStream;
-                const currentTrack = currentStream instanceof MediaStream
-                  ? currentStream.getVideoTracks()[0] || null
-                  : null;
-                if (currentTrack && currentTrack.readyState === "live" && !currentTrack.muted) {
-                  logCallVideoDebug("remote_video_clear_grace_skipped", {
-                    reason: "track_recovered",
-                    currentTrack: getDebugTrackState(currentTrack)
-                  });
-                  return;
-                }
-                clearRemoteVideoTrack();
-              }, 1600);
-            };
-            if (!event.track.muted && event.track.readyState === "live") {
-              applyRemoteVideoTrack();
-            } else {
-              syncCallVideoStage();
-            }
-            event.track.onunmute = () => {
-              if (activeCall?.remoteVideoMuteGraceTimer) {
-                window.clearTimeout(activeCall.remoteVideoMuteGraceTimer);
-                activeCall.remoteVideoMuteGraceTimer = null;
-              }
-              logCallVideoDebug("track_onunmute", {
-                incomingTrack: getDebugTrackState(event.track)
-              });
-              applyRemoteVideoTrack();
-            };
-            event.track.onmute = () => {
-              logCallVideoDebug("track_onmute", {
-                incomingTrack: getDebugTrackState(event.track)
-              });
-              clearRemoteVideoTrackWithGrace();
-            };
-            event.track.onended = () => {
-              if (activeCall?.remoteVideoMuteGraceTimer) {
-                window.clearTimeout(activeCall.remoteVideoMuteGraceTimer);
-                activeCall.remoteVideoMuteGraceTimer = null;
-              }
-              logCallVideoDebug("track_onended", {
-                incomingTrack: getDebugTrackState(event.track)
-              });
-              clearRemoteVideoTrack();
-            };
-          }
-        };
-
-        peerConnection.onconnectionstatechange = () => {
-          if (!activeCall || activeCall.callId !== call.callId) {
-            return;
-          }
-
-          logCall("pc_connection_state", {
-            callId: call.callId,
-            connectionState: peerConnection.connectionState,
-            iceConnectionState: peerConnection.iceConnectionState,
-            iceGatheringState: peerConnection.iceGatheringState,
-            signalingState: peerConnection.signalingState
-          });
-
-          if (peerConnection.connectionState === "connected") {
-            activeCall.status = "active";
-            activeCall.lastError = "";
-            if (!activeCall.connectedAt) {
-              activeCall.connectedAt = Date.now();
-            }
-            clearCallTimers();
-            stopCallRingtone();
-            startCallTicker();
-            syncCallUi();
-            return;
-          }
-
-          if (peerConnection.connectionState === "disconnected") {
-            if (activeCall.status === "active" || activeCall.status === "connecting") {
-              activeCall.status = "reconnecting";
-              setCallError("Unstable network, reconnecting.", {
-                connectionState: peerConnection.connectionState,
-                iceConnectionState: peerConnection.iceConnectionState
-              });
-              syncCallUi();
-            }
-            if (!callTimeoutTimer) {
-              callTimeoutTimer = window.setTimeout(() => {
-                if (!activeCall || activeCall.callId !== call.callId) {
-                  return;
-                }
-                void finishActiveCall({
-                  summaryBody: activeCall.connectedAt ? buildCallMessageMarker("ended", getCallElapsedSeconds()) : buildCallMessageMarker("missed"),
-                  remoteEnded: false
-                });
-              }, CALL_RECONNECT_GRACE_MS);
-            }
-            return;
-          }
-
-          if (peerConnection.connectionState === "failed" || peerConnection.connectionState === "closed") {
-            setCallError("WebRTC connection failed.", {
-              connectionState: peerConnection.connectionState,
-              iceConnectionState: peerConnection.iceConnectionState,
-              signalingState: peerConnection.signalingState
-            });
-            void finishActiveCall({
-              summaryBody: activeCall.connectedAt ? buildCallMessageMarker("ended", getCallElapsedSeconds()) : "",
-              remoteEnded: false
-            });
-          }
-        };
-
-        peerConnection.oniceconnectionstatechange = () => {
-          if (!activeCall || activeCall.callId !== call.callId) {
-            return;
-          }
-
-          logCall("pc_ice_connection_state", {
-            callId: call.callId,
-            iceConnectionState: peerConnection.iceConnectionState,
-            connectionState: peerConnection.connectionState,
-            iceGatheringState: peerConnection.iceGatheringState
-          });
-
-          if (peerConnection.iceConnectionState === "connected" || peerConnection.iceConnectionState === "completed") {
-            if (activeCall.status === "reconnecting") {
-              activeCall.status = activeCall.connectedAt ? "active" : "connecting";
-              activeCall.lastError = "";
-              syncCallUi();
-            }
-            return;
-          }
-
-          if (peerConnection.iceConnectionState === "failed") {
-            setCallError("ICE failed: candidates could not connect.", {
-              connectionState: peerConnection.connectionState,
-              signalingState: peerConnection.signalingState
-            });
-            void finishActiveCall({
-              summaryBody: activeCall.connectedAt ? buildCallMessageMarker("ended", getCallElapsedSeconds()) : buildCallMessageMarker("missed"),
-              remoteEnded: false
-            });
-          }
-        };
-
-        peerConnection.onicecandidateerror = (event) => {
-          const safeCode = Number.isFinite(event?.errorCode) ? event.errorCode : "unknown";
-          const safeText = event?.errorText ? String(event.errorText) : "unknown";
-          const safeUrl = event?.url ? String(event.url) : "";
-          const verboseMessage = "ICE " + safeCode + ": " + safeText + (safeUrl ? " (" + safeUrl + ")" : "");
-          warnCall("ice_candidate_error", {
-            callId: call.callId,
-            errorCode: event.errorCode,
-            errorText: event.errorText,
-            url: event.url
-          });
-
-          if (!activeCall || activeCall.callId !== call.callId) {
-            return;
-          }
-
-          // 701 errors are often non-fatal candidate gathering warnings in browsers.
-          if (Number(event?.errorCode) === 701) {
-            return;
-          }
-
-          // Do not override active call UI with transient candidate-level errors.
-          if (activeCall.status === "active") {
-            return;
-          }
-
-          setCallError(verboseMessage, {
-            errorCode: event.errorCode,
-            errorText: event.errorText,
-            url: event.url
-          });
-        };
-
-        peerConnection.onicegatheringstatechange = () => {
-          logCall("pc_ice_gathering_state", {
-            callId: call.callId,
-            iceGatheringState: peerConnection.iceGatheringState
-          });
-        };
-
-        peerConnection.onsignalingstatechange = () => {
-          logCall("pc_signaling_state", {
-            callId: call.callId,
-            signalingState: peerConnection.signalingState
-          });
-          if (
-            activeCall
-            && activeCall.callId === call.callId
-            && activeCall.mode !== "group"
-            && peerConnection.signalingState === "stable"
-            && activeCall.pendingVisualRenegotiationReason
-          ) {
-            const retryReason = activeCall.pendingVisualRenegotiationReason;
-            activeCall.pendingVisualRenegotiationReason = "";
-            if (activeCall.visualRenegotiateRetryTimer) {
-              window.clearTimeout(activeCall.visualRenegotiateRetryTimer);
-              activeCall.visualRenegotiateRetryTimer = null;
-            }
-            void renegotiateDirectVisualTrack(activeCall, retryReason);
-          }
-        };
-
-        return peerConnection;
-      };
-
-      const ensureCallLocalStream = async (inputDeviceId) => {
-        if (!navigator.mediaDevices?.getUserMedia) {
-          throw new Error("This browser does not support calls.");
-        }
-
-        const constraints = {
-          audio: {
-            ...(inputDeviceId ? { deviceId: { exact: inputDeviceId } } : {}),
-            echoCancellation: true,
-            noiseSuppression: true,
-            autoGainControl: true,
-            channelCount: 1,
-            sampleRate: 48000,
-            sampleSize: 16,
-            latency: 0
-          }
-        };
-
-        return navigator.mediaDevices.getUserMedia(constraints);
-      };
-
-      const applyCallOutputDevice = async (deviceId) => {
-        const audio = ensureRemoteAudioNode();
-
-        if (typeof audio.setSinkId !== "function" || !deviceId) {
-          return;
-        }
-
-        try {
-          await audio.setSinkId(deviceId);
-        } catch {}
-      };
 
       const getParticipantInitialsForCall = (name) => {
         const parts = String(name || "Guest").trim().split(/s+/).filter(Boolean).slice(0, 2);
@@ -4921,6 +4762,680 @@
         }
       };
 
+
+      const restoreCallModal = () => {
+        if (!activeCall) {
+          return;
+        }
+
+        activeCall.minimized = false;
+        activeCall.miniHidden = false;
+        syncCallUi();
+      };
+
+      const minimizeCallModal = () => {
+        if (!activeCall) {
+          return;
+        }
+
+        activeCall.minimized = true;
+        activeCall.miniHidden = false;
+        closeCallDevicesPanel();
+        syncCallUi();
+      };
+
+      const dismissMiniCallCard = () => {
+        if (!activeCall) {
+          return;
+        }
+
+        activeCall.miniHidden = true;
+        syncCallUi();
+      };
+
+
+      const avatarPalettes = [
+        ["#6cb5ff", "#4a8fe9"],
+        ["#ff9f6c", "#ea6d4a"],
+        ["#7de3b2", "#39b67f"],
+        ["#f7a6d8", "#d66ab3"],
+        ["#b49cff", "#7f69ee"],
+        ["#ffd56a", "#f0a93e"],
+        ["#7fd4ff", "#3d8fe0"]
+      ];
+      const hashSeed = (seed) => {
+        const text = String(seed || "?");
+        let hash = 0;
+        for (let index = 0; index < text.length; index += 1) {
+          hash = ((hash << 5) - hash + text.charCodeAt(index)) | 0;
+        }
+        return Math.abs(hash);
+      };
+      const buildGeneratedAvatarUrl = (seedSource, labelSource) => {
+        const seed = String(seedSource || labelSource || "?");
+        const hash = hashSeed(seed);
+        const palette = avatarPalettes[hash % avatarPalettes.length];
+        const rawLabel = String(labelSource || seedSource || "?").trim();
+        const words = rawLabel.split(/s+/);
+        let rawLetter = "";
+        if (words.length >= 2) {
+          rawLetter = (words[0][0] || "") + (words[1][0] || "");
+        } else if (rawLabel.length >= 2) {
+          rawLetter = rawLabel.slice(0, 2);
+        } else {
+          rawLetter = rawLabel[0] || "?";
+        }
+        const letter = escapeHtml(rawLetter.toLocaleUpperCase("ru-RU"));
+        const svg = [
+          '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128">',
+          '<defs><linearGradient id="g" x1="0" y1="0" x2="0" y2="1">',
+          '<stop offset="0%" stop-color="', palette[0], '"/>',
+          '<stop offset="100%" stop-color="', palette[1], '"/>',
+          '</linearGradient></defs>',
+          '<circle cx="64" cy="64" r="64" fill="url(#g)"/>',
+          '<circle cx="38" cy="30" r="18" fill="#ffffff" opacity="0.08"/>',
+          '<text x="50%" y="54%" dominant-baseline="middle" text-anchor="middle" fill="#ffffff" font-family="Roboto, Segoe UI, Trebuchet MS, sans-serif" font-size="58" font-weight="700">',
+          letter,
+          '</text></svg>'
+        ].join("");
+        return "data:image/svg+xml;charset=utf-8," + encodeURIComponent(svg);
+      };
+
+      const getAvatarMeta = (seedSource, labelSource) => {
+        const seed = String(seedSource || labelSource || "?");
+        const hash = hashSeed(seed);
+        const palette = avatarPalettes[Math.abs(hash) % avatarPalettes.length];
+        const rawLabel = String(labelSource || seedSource || "?").trim();
+        const words = rawLabel.split(/s+/);
+        let rawLetter = "";
+        if (words.length >= 2) {
+          rawLetter = (words[0][0] || "") + (words[1][0] || "");
+        } else if (rawLabel.length >= 2) {
+          rawLetter = rawLabel.slice(0, 2);
+        } else {
+          rawLetter = rawLabel[0] || "?";
+        }
+        const letter = rawLetter.toLocaleUpperCase("ru-RU") || "?";
+        const avatarUrl = buildGeneratedAvatarUrl(seedSource, labelSource);
+        return {
+          letter: escapeHtml(letter),
+          start: palette[0],
+          end: palette[1],
+          avatarUrl,
+          style: '--avatar-start:' + palette[0] + ';--avatar-end:' + palette[1] + ';'
+        };
+      };
+
+
+
+
+      const createGroupPeerConnection = (call, peerUserId, peerName = "User") => {
+        if (!call || call.mode !== "group" || !peerUserId) {
+          return null;
+        }
+        if (!(call.groupPeerConnections instanceof Map)) {
+          call.groupPeerConnections = new Map();
+        }
+        const existing = call.groupPeerConnections.get(peerUserId);
+        if (existing?.peerConnection) {
+          return existing.peerConnection;
+        }
+        const iceServers = parseRtcIceServers();
+        const peerConnection = new RTCPeerConnection({
+          iceServers,
+          iceCandidatePoolSize: 10
+        });
+        if (call.localStream) {
+          call.localStream.getTracks().forEach((track) => {
+            try {
+              peerConnection.addTrack(track, call.localStream);
+            } catch {}
+          });
+        }
+        call.groupPeerConnections.set(peerUserId, {
+          peerConnection,
+          peerUserId,
+          peerName: String(peerName || "User"),
+          offerSent: false
+        });
+
+        peerConnection.onicecandidate = (event) => {
+          if (!activeCall || activeCall.mode !== "group" || activeCall.callId !== call.callId) {
+            return;
+          }
+          if (!event.candidate) {
+            return;
+          }
+          sendCallRealtime({
+            type: "call_candidate",
+            mode: "group",
+            callId: call.callId,
+            dialogId: call.dialogId,
+            dialogPublicId: call.dialogPublicId,
+            targetUserId: peerUserId,
+            candidate: event.candidate
+          });
+        };
+
+        peerConnection.ontrack = (event) => {
+          if (!activeCall || activeCall.mode !== "group" || activeCall.callId !== call.callId) {
+            return;
+          }
+          if (!(call.groupRemoteAudioNodes instanceof Map)) {
+            call.groupRemoteAudioNodes = new Map();
+          }
+          let audioNode = call.groupRemoteAudioNodes.get(peerUserId);
+          if (!audioNode) {
+            audioNode = new Audio();
+            audioNode.autoplay = true;
+            audioNode.controls = false;
+            audioNode.style.display = "none";
+            document.body.appendChild(audioNode);
+            call.groupRemoteAudioNodes.set(peerUserId, audioNode);
+          }
+          audioNode.srcObject = event.streams?.[0] || null;
+          try {
+            const playPromise = audioNode.play();
+            if (playPromise?.catch) {
+              playPromise.catch(() => {});
+            }
+          } catch {}
+        };
+
+        peerConnection.onconnectionstatechange = () => {
+          const state = peerConnection.connectionState;
+          if (state === "failed" || state === "closed" || state === "disconnected") {
+            const entry = call.groupPeerConnections.get(peerUserId);
+            if (entry?.peerConnection === peerConnection) {
+              call.groupPeerConnections.delete(peerUserId);
+            }
+          }
+        };
+
+        return peerConnection;
+      };
+
+      const maybeStartGroupPeerNegotiation = async (call, peerUserId, peerName = "User") => {
+        if (!call || call.mode !== "group" || !peerUserId || peerUserId === currentUserId) {
+          return;
+        }
+        const selfId = String(currentUserId || "");
+        const targetId = String(peerUserId || "");
+        if (!selfId || !targetId) {
+          return;
+        }
+        const shouldInitiate = selfId.localeCompare(targetId) > 0;
+        const peerConnection = createGroupPeerConnection(call, peerUserId, peerName);
+        if (!peerConnection) {
+          return;
+        }
+        const entry = call.groupPeerConnections.get(peerUserId);
+        if (!shouldInitiate || entry?.offerSent) {
+          return;
+        }
+        try {
+          const offer = await buildOfferWithVoiceProfile(peerConnection);
+          await peerConnection.setLocalDescription(offer);
+          entry.offerSent = true;
+          call.groupPeerConnections.set(peerUserId, entry);
+          sendCallRealtime({
+            type: "call_invite",
+            mode: "group",
+            callId: call.callId,
+            dialogId: call.dialogId,
+            dialogPublicId: call.dialogPublicId,
+            targetUserId: peerUserId,
+            callerName: currentUserDisplayName || workspaceUserName.textContent || "TheGraphT",
+            offer
+          });
+        } catch (error) {
+          warnCall("group_offer_failed", {
+            peerUserId,
+            error: error instanceof Error ? error.message : String(error)
+          });
+        }
+      };
+
+      const sendCallRealtime = (payload) => {
+        if (!realtimeSocket || realtimeSocket.readyState !== WebSocket.OPEN) {
+          warnCall("realtime_send_skipped_socket_not_open", {
+            payloadType: payload?.type,
+            readyState: realtimeSocket?.readyState
+          });
+          return;
+        }
+
+        logCall("realtime_send", {
+          payloadType: payload.type,
+          callId: payload.callId,
+          dialogId: payload.dialogId,
+          active: typeof payload.active === "boolean" ? payload.active : undefined,
+          reason: payload.reason || ""
+        });
+        realtimeSocket.send(JSON.stringify(payload));
+      };
+
+      const finishActiveCall = async ({ summaryBody = "", remoteEnded = false } = {}) => {
+        if (!activeCall) {
+          return;
+        }
+
+        logCall("finish_call", {
+          callId: activeCall.callId,
+          status: activeCall.status,
+          remoteEnded,
+          summaryBody
+        });
+        rememberRecentlyClosedCall(activeCall.dialogId, activeCall.callId);
+        clearCallTimers();
+        closeExpandedScreenPreview();
+        await stopAndReleaseCallMedia();
+        activeCall = null;
+        syncCallUi();
+      };
+
+
+      const loadCallDevices = async () => {
+        try {
+          const devices = await navigator.mediaDevices.enumerateDevices();
+          const inputDevices = devices.filter((device) => device.kind === "audioinput");
+          const outputDevices = devices.filter((device) => device.kind === "audiooutput");
+
+          callInputDevice.innerHTML = inputDevices.map((device, index) => (
+            '<option value="' + escapeHtml(device.deviceId) + '">' + escapeHtml(device.label || ("Microphone " + (index + 1))) + '</option>'
+          )).join("");
+
+          callOutputDevice.innerHTML = outputDevices.map((device, index) => (
+            '<option value="' + escapeHtml(device.deviceId) + '">' + escapeHtml(device.label || ("Output " + (index + 1))) + '</option>'
+          )).join("");
+        } catch {}
+      };
+
+      const createPeerConnection = (call) => {
+        const iceServers = parseRtcIceServers();
+        const peerConnection = new RTCPeerConnection({
+          iceServers,
+          iceCandidatePoolSize: 10
+        });
+        try {
+          peerConnection.addTransceiver("video", { direction: "sendrecv" });
+        } catch {}
+        logCall("pc_created", { callId: call.callId, iceServers });
+
+        peerConnection.onicecandidate = (event) => {
+          if (!activeCall || activeCall.callId !== call.callId) {
+            return;
+          }
+
+          if (!event.candidate) {
+            logCall("ice_candidate_gathering_complete", {
+              callId: call.callId,
+              iceGatheringState: peerConnection.iceGatheringState
+            });
+            return;
+          }
+
+          logCall("ice_candidate_local", {
+            callId: call.callId,
+            protocol: event.candidate.protocol,
+            type: event.candidate.type,
+            address: event.candidate.address
+          });
+
+          sendCallRealtime({
+            type: "call_candidate",
+            callId: call.callId,
+            dialogId: call.dialogId,
+            dialogPublicId: call.dialogPublicId,
+            candidate: event.candidate
+          });
+        };
+
+        peerConnection.ontrack = (event) => {
+          logCall("remote_track_received", {
+            callId: call.callId,
+            kind: event.track?.kind || "",
+            streamCount: event.streams?.length || 0,
+            track: getDebugTrackState(event.track || null),
+            streams: Array.from(event.streams || []).map(getDebugStreamState)
+          });
+          logCallVideoDebug("ontrack", {
+            incomingTrack: getDebugTrackState(event.track || null),
+            incomingStreams: Array.from(event.streams || []).map(getDebugStreamState)
+          });
+          if (!event.track) {
+            return;
+          }
+          const stream = event.streams?.[0] || new MediaStream([event.track]);
+          if (event.track?.kind === "audio") {
+            const audio = ensureRemoteAudioNode();
+            audio.srcObject = stream;
+            startCallVoiceMeter(stream);
+            try {
+              const playPromise = audio.play();
+              if (playPromise?.catch) {
+                playPromise.catch(() => {});
+              }
+            } catch {}
+            return;
+          }
+          if (event.track?.kind === "video" && activeCall && activeCall.callId === call.callId) {
+            const applyRemoteVideoTrack = () => {
+              logCallVideoDebug("remote_video_apply_attempt", {
+                incomingTrack: getDebugTrackState(event.track),
+                incomingStream: getDebugStreamState(stream)
+              });
+              if (!activeCall || activeCall.callId !== call.callId) {
+                return;
+              }
+              if (event.track.readyState === "ended" || event.track.muted) {
+                logCallVideoDebug("remote_video_apply_skipped", {
+                  reason: event.track.readyState === "ended" ? "ended" : "muted",
+                  incomingTrack: getDebugTrackState(event.track)
+                });
+                return;
+              }
+              if (activeCall.remoteVideoStream !== stream) {
+                activeCall.remoteVideoFrameReady = false;
+              }
+              activeCall.remoteVideoStream = stream;
+              // Treat a live/unmuted inbound track as frame-ready to avoid
+              // placeholder flicker while the element refreshes metadata.
+              if (event.track.readyState === "live" && !event.track.muted) {
+                activeCall.remoteVideoFrameReady = true;
+              }
+              logCallVideoDebug("remote_video_applied", {
+                incomingTrack: getDebugTrackState(event.track),
+                incomingStream: getDebugStreamState(stream)
+              });
+              syncCallVideoStage();
+            };
+            const clearRemoteVideoTrack = () => {
+              logCallVideoDebug("remote_video_clear_attempt", {
+                incomingTrack: getDebugTrackState(event.track)
+              });
+              if (!activeCall || activeCall.callId !== call.callId) {
+                return;
+              }
+              const currentStream = activeCall.remoteVideoStream;
+              const currentTrack = currentStream instanceof MediaStream
+                ? currentStream.getVideoTracks()[0] || null
+                : null;
+              if (currentTrack && currentTrack !== event.track) {
+                logCallVideoDebug("remote_video_clear_skipped", {
+                  reason: "different_current_track",
+                  incomingTrack: getDebugTrackState(event.track),
+                  currentTrack: getDebugTrackState(currentTrack)
+                });
+                return;
+              }
+              activeCall.remoteVideoStream = null;
+              activeCall.remoteVideoFrameReady = false;
+              activeCall.remoteVisualKind = "none";
+              if (activeCall.remoteScreenSharing) {
+                activeCall.remoteScreenSharing = false;
+                activeCall.screenOwnerUserId = "";
+              }
+              logCallVideoDebug("remote_video_cleared", {
+                incomingTrack: getDebugTrackState(event.track)
+              });
+              syncCallVideoStage();
+              syncCallUi();
+            };
+            const clearRemoteVideoTrackWithGrace = () => {
+              if (!activeCall || activeCall.callId !== call.callId) {
+                return;
+              }
+              if (activeCall.remoteVideoMuteGraceTimer) {
+                window.clearTimeout(activeCall.remoteVideoMuteGraceTimer);
+              }
+              activeCall.remoteVideoMuteGraceTimer = window.setTimeout(() => {
+                if (!activeCall || activeCall.callId !== call.callId) {
+                  return;
+                }
+                activeCall.remoteVideoMuteGraceTimer = null;
+                const currentStream = activeCall.remoteVideoStream;
+                const currentTrack = currentStream instanceof MediaStream
+                  ? currentStream.getVideoTracks()[0] || null
+                  : null;
+                if (currentTrack && currentTrack.readyState === "live" && !currentTrack.muted) {
+                  logCallVideoDebug("remote_video_clear_grace_skipped", {
+                    reason: "track_recovered",
+                    currentTrack: getDebugTrackState(currentTrack)
+                  });
+                  return;
+                }
+                clearRemoteVideoTrack();
+              }, 1600);
+            };
+            if (!event.track.muted && event.track.readyState === "live") {
+              applyRemoteVideoTrack();
+            } else {
+              syncCallVideoStage();
+            }
+            event.track.onunmute = () => {
+              if (activeCall?.remoteVideoMuteGraceTimer) {
+                window.clearTimeout(activeCall.remoteVideoMuteGraceTimer);
+                activeCall.remoteVideoMuteGraceTimer = null;
+              }
+              logCallVideoDebug("track_onunmute", {
+                incomingTrack: getDebugTrackState(event.track)
+              });
+              applyRemoteVideoTrack();
+            };
+            event.track.onmute = () => {
+              logCallVideoDebug("track_onmute", {
+                incomingTrack: getDebugTrackState(event.track)
+              });
+              clearRemoteVideoTrackWithGrace();
+            };
+            event.track.onended = () => {
+              if (activeCall?.remoteVideoMuteGraceTimer) {
+                window.clearTimeout(activeCall.remoteVideoMuteGraceTimer);
+                activeCall.remoteVideoMuteGraceTimer = null;
+              }
+              logCallVideoDebug("track_onended", {
+                incomingTrack: getDebugTrackState(event.track)
+              });
+              clearRemoteVideoTrack();
+            };
+          }
+        };
+
+        peerConnection.onconnectionstatechange = () => {
+          if (!activeCall || activeCall.callId !== call.callId) {
+            return;
+          }
+
+          logCall("pc_connection_state", {
+            callId: call.callId,
+            connectionState: peerConnection.connectionState,
+            iceConnectionState: peerConnection.iceConnectionState,
+            iceGatheringState: peerConnection.iceGatheringState,
+            signalingState: peerConnection.signalingState
+          });
+
+          if (peerConnection.connectionState === "connected") {
+            activeCall.status = "active";
+            activeCall.lastError = "";
+            if (!activeCall.connectedAt) {
+              activeCall.connectedAt = Date.now();
+            }
+            clearCallTimers();
+            stopCallRingtone();
+            startCallTicker();
+            syncCallUi();
+            return;
+          }
+
+          if (peerConnection.connectionState === "disconnected") {
+            if (activeCall.status === "active" || activeCall.status === "connecting") {
+              activeCall.status = "reconnecting";
+              setCallError("Unstable network, reconnecting.", {
+                connectionState: peerConnection.connectionState,
+                iceConnectionState: peerConnection.iceConnectionState
+              });
+              syncCallUi();
+            }
+            if (!callTimeoutTimer) {
+              callTimeoutTimer = window.setTimeout(() => {
+                if (!activeCall || activeCall.callId !== call.callId) {
+                  return;
+                }
+                void finishActiveCall({
+                  summaryBody: activeCall.connectedAt ? buildCallMessageMarker("ended", getCallElapsedSeconds()) : buildCallMessageMarker("missed"),
+                  remoteEnded: false
+                });
+              }, CALL_RECONNECT_GRACE_MS);
+            }
+            return;
+          }
+
+          if (peerConnection.connectionState === "failed" || peerConnection.connectionState === "closed") {
+            setCallError("WebRTC connection failed.", {
+              connectionState: peerConnection.connectionState,
+              iceConnectionState: peerConnection.iceConnectionState,
+              signalingState: peerConnection.signalingState
+            });
+            void finishActiveCall({
+              summaryBody: activeCall.connectedAt ? buildCallMessageMarker("ended", getCallElapsedSeconds()) : "",
+              remoteEnded: false
+            });
+          }
+        };
+
+        peerConnection.oniceconnectionstatechange = () => {
+          if (!activeCall || activeCall.callId !== call.callId) {
+            return;
+          }
+
+          logCall("pc_ice_connection_state", {
+            callId: call.callId,
+            iceConnectionState: peerConnection.iceConnectionState,
+            connectionState: peerConnection.connectionState,
+            iceGatheringState: peerConnection.iceGatheringState
+          });
+
+          if (peerConnection.iceConnectionState === "connected" || peerConnection.iceConnectionState === "completed") {
+            if (activeCall.status === "reconnecting") {
+              activeCall.status = activeCall.connectedAt ? "active" : "connecting";
+              activeCall.lastError = "";
+              syncCallUi();
+            }
+            return;
+          }
+
+          if (peerConnection.iceConnectionState === "failed") {
+            setCallError("ICE failed: candidates could not connect.", {
+              connectionState: peerConnection.connectionState,
+              signalingState: peerConnection.signalingState
+            });
+            void finishActiveCall({
+              summaryBody: activeCall.connectedAt ? buildCallMessageMarker("ended", getCallElapsedSeconds()) : buildCallMessageMarker("missed"),
+              remoteEnded: false
+            });
+          }
+        };
+
+        peerConnection.onicecandidateerror = (event) => {
+          const safeCode = Number.isFinite(event?.errorCode) ? event.errorCode : "unknown";
+          const safeText = event?.errorText ? String(event.errorText) : "unknown";
+          const safeUrl = event?.url ? String(event.url) : "";
+          const verboseMessage = "ICE " + safeCode + ": " + safeText + (safeUrl ? " (" + safeUrl + ")" : "");
+          warnCall("ice_candidate_error", {
+            callId: call.callId,
+            errorCode: event.errorCode,
+            errorText: event.errorText,
+            url: event.url
+          });
+
+          if (!activeCall || activeCall.callId !== call.callId) {
+            return;
+          }
+
+          // 701 errors are often non-fatal candidate gathering warnings in browsers.
+          if (Number(event?.errorCode) === 701) {
+            return;
+          }
+
+          // Do not override active call UI with transient candidate-level errors.
+          if (activeCall.status === "active") {
+            return;
+          }
+
+          setCallError(verboseMessage, {
+            errorCode: event.errorCode,
+            errorText: event.errorText,
+            url: event.url
+          });
+        };
+
+        peerConnection.onicegatheringstatechange = () => {
+          logCall("pc_ice_gathering_state", {
+            callId: call.callId,
+            iceGatheringState: peerConnection.iceGatheringState
+          });
+        };
+
+        peerConnection.onsignalingstatechange = () => {
+          logCall("pc_signaling_state", {
+            callId: call.callId,
+            signalingState: peerConnection.signalingState
+          });
+          if (
+            activeCall
+            && activeCall.callId === call.callId
+            && activeCall.mode !== "group"
+            && peerConnection.signalingState === "stable"
+            && activeCall.pendingVisualRenegotiationReason
+          ) {
+            const retryReason = activeCall.pendingVisualRenegotiationReason;
+            activeCall.pendingVisualRenegotiationReason = "";
+            if (activeCall.visualRenegotiateRetryTimer) {
+              window.clearTimeout(activeCall.visualRenegotiateRetryTimer);
+              activeCall.visualRenegotiateRetryTimer = null;
+            }
+            void renegotiateDirectVisualTrack(activeCall, retryReason);
+          }
+        };
+
+        return peerConnection;
+      };
+
+      const ensureCallLocalStream = async (inputDeviceId) => {
+        if (!navigator.mediaDevices?.getUserMedia) {
+          throw new Error("This browser does not support calls.");
+        }
+
+        const constraints = {
+          audio: {
+            ...(inputDeviceId ? { deviceId: { exact: inputDeviceId } } : {}),
+            echoCancellation: true,
+            noiseSuppression: true,
+            autoGainControl: true,
+            channelCount: 1,
+            sampleRate: 48000,
+            sampleSize: 16,
+            latency: 0
+          }
+        };
+
+        return navigator.mediaDevices.getUserMedia(constraints);
+      };
+
+      const applyCallOutputDevice = async (deviceId) => {
+        const audio = ensureRemoteAudioNode();
+
+        if (typeof audio.setSinkId !== "function" || !deviceId) {
+          return;
+        }
+
+        try {
+          await audio.setSinkId(deviceId);
+        } catch {}
+      };
+
+
       const updateVisualSenderTrack = async (call, track) => {
         if (!call?.peerConnection) {
           return;
@@ -5203,6 +5718,7 @@
         return true;
       };
 
+
       const toggleDirectCallCamera = async () => {
         if (!activeCall || activeCall.mode === "group") {
           return;
@@ -5266,35 +5782,6 @@
         }
       };
 
-      const restoreCallModal = () => {
-        if (!activeCall) {
-          return;
-        }
-
-        activeCall.minimized = false;
-        activeCall.miniHidden = false;
-        syncCallUi();
-      };
-
-      const minimizeCallModal = () => {
-        if (!activeCall) {
-          return;
-        }
-
-        activeCall.minimized = true;
-        activeCall.miniHidden = false;
-        closeCallDevicesPanel();
-        syncCallUi();
-      };
-
-      const dismissMiniCallCard = () => {
-        if (!activeCall) {
-          return;
-        }
-
-        activeCall.miniHidden = true;
-        syncCallUi();
-      };
 
       const showIncomingCallNotification = async (call) => {
         if (!isWindowInactive() || !call || !isNotificationOwner()) {
@@ -6380,77 +6867,7 @@
       window.addEventListener("pagehide", notifyCallStateOnPageUnload);
       window.addEventListener("beforeunload", notifyCallStateOnPageUnload);
 
-      const avatarPalettes = [
-        ["#6cb5ff", "#4a8fe9"],
-        ["#ff9f6c", "#ea6d4a"],
-        ["#7de3b2", "#39b67f"],
-        ["#f7a6d8", "#d66ab3"],
-        ["#b49cff", "#7f69ee"],
-        ["#ffd56a", "#f0a93e"],
-        ["#7fd4ff", "#3d8fe0"]
-      ];
-      const hashSeed = (seed) => {
-        const text = String(seed || "?");
-        let hash = 0;
-        for (let index = 0; index < text.length; index += 1) {
-          hash = ((hash << 5) - hash + text.charCodeAt(index)) | 0;
-        }
-        return Math.abs(hash);
-      };
-      const buildGeneratedAvatarUrl = (seedSource, labelSource) => {
-        const seed = String(seedSource || labelSource || "?");
-        const hash = hashSeed(seed);
-        const palette = avatarPalettes[hash % avatarPalettes.length];
-        const rawLabel = String(labelSource || seedSource || "?").trim();
-        const words = rawLabel.split(/s+/);
-        let rawLetter = "";
-        if (words.length >= 2) {
-          rawLetter = (words[0][0] || "") + (words[1][0] || "");
-        } else if (rawLabel.length >= 2) {
-          rawLetter = rawLabel.slice(0, 2);
-        } else {
-          rawLetter = rawLabel[0] || "?";
-        }
-        const letter = escapeHtml(rawLetter.toLocaleUpperCase("ru-RU"));
-        const svg = [
-          '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128">',
-          '<defs><linearGradient id="g" x1="0" y1="0" x2="0" y2="1">',
-          '<stop offset="0%" stop-color="', palette[0], '"/>',
-          '<stop offset="100%" stop-color="', palette[1], '"/>',
-          '</linearGradient></defs>',
-          '<circle cx="64" cy="64" r="64" fill="url(#g)"/>',
-          '<circle cx="38" cy="30" r="18" fill="#ffffff" opacity="0.08"/>',
-          '<text x="50%" y="54%" dominant-baseline="middle" text-anchor="middle" fill="#ffffff" font-family="Roboto, Segoe UI, Trebuchet MS, sans-serif" font-size="58" font-weight="700">',
-          letter,
-          '</text></svg>'
-        ].join("");
-        return "data:image/svg+xml;charset=utf-8," + encodeURIComponent(svg);
-      };
 
-      const getAvatarMeta = (seedSource, labelSource) => {
-        const seed = String(seedSource || labelSource || "?");
-        const hash = hashSeed(seed);
-        const palette = avatarPalettes[Math.abs(hash) % avatarPalettes.length];
-        const rawLabel = String(labelSource || seedSource || "?").trim();
-        const words = rawLabel.split(/s+/);
-        let rawLetter = "";
-        if (words.length >= 2) {
-          rawLetter = (words[0][0] || "") + (words[1][0] || "");
-        } else if (rawLabel.length >= 2) {
-          rawLetter = rawLabel.slice(0, 2);
-        } else {
-          rawLetter = rawLabel[0] || "?";
-        }
-        const letter = rawLetter.toLocaleUpperCase("ru-RU") || "?";
-        const avatarUrl = buildGeneratedAvatarUrl(seedSource, labelSource);
-        return {
-          letter: escapeHtml(letter),
-          start: palette[0],
-          end: palette[1],
-          avatarUrl,
-          style: '--avatar-start:' + palette[0] + ';--avatar-end:' + palette[1] + ';'
-        };
-      };
 
 
       const getLocalMessagesForDialog = (dialogPublicId) => localOutgoingMessages.filter((message) => message.dialogPublicId === dialogPublicId);
@@ -6575,6 +6992,9 @@
         }
         return date.toLocaleDateString("en-US", { day: "numeric", month: "long" });
       };
+
+
+
 
       const canUseNotifications = () => typeof Notification !== "undefined";
 
@@ -6995,6 +7415,9 @@
         } catch {}
       };
 
+
+
+
       const getConstrainedImageSize = (naturalWidth, naturalHeight) => {
         if (!naturalWidth || !naturalHeight) {
           return null;
@@ -7092,6 +7515,10 @@
             if (fallbackSrc && imageNode.dataset.fallbackTried !== "true") {
               imageNode.dataset.fallbackTried = "true";
               imageNode.src = fallbackSrc;
+              const linkNode = imageNode.closest(".message-image-link");
+              if (linkNode) {
+                linkNode.setAttribute("data-image-url", fallbackSrc);
+              }
               return;
             }
             const shell = imageNode.closest(".message-image-shell");
@@ -7714,7 +8141,7 @@
 
         return {
           left: viewportWidth / 2,
-          top: topInset + (maxHeight / 2),
+          top: viewportHeight / 2,
           width,
           height
         };
@@ -7794,6 +8221,9 @@
         viewerAuthorAvatar.style.cssText = avatar.style;
         viewerAuthorName.textContent = senderName || "TheGraphT";
         viewerAuthorMeta.textContent = formatViewerTimestamp(createdAt);
+
+
+
         viewerZoomChip.setAttribute("aria-hidden", "false");
         viewerModal.setAttribute("aria-hidden", "false");
         applyViewerRect(viewerSourceRect, 1, 18);
@@ -7838,7 +8268,19 @@
         });
 
         if (removedMessage?.mediaUrl && String(removedMessage.mediaUrl).startsWith("blob:")) {
-          URL.revokeObjectURL(removedMessage.mediaUrl);
+          const isCached = (() => {
+            if (typeof window.mediaUrlToBlobUrlCache !== "undefined" && window.mediaUrlToBlobUrlCache) {
+              for (const value of window.mediaUrlToBlobUrlCache.values()) {
+                if (value === removedMessage.mediaUrl) {
+                  return true;
+                }
+              }
+            }
+            return false;
+          })();
+          if (!isCached) {
+            URL.revokeObjectURL(removedMessage.mediaUrl);
+          }
         }
       };
 
@@ -8139,6 +8581,11 @@
                         }
                       : {}
                   );
+
+                if (localDraft && localDraft.mediaUrl && typeof window.registerMediaBlobUrl === "function") {
+                  window.registerMediaBlobUrl(payload.message.mediaUrl, localDraft.mediaUrl);
+                }
+
                 appendConfirmedMessageToCurrentDialog(payload.dialog, payload.message, {
                   scrollBehavior: "auto",
                   replaceMessageId: localDraft?.id || "",
@@ -8594,6 +9041,9 @@
         } else {
           currentSet.delete(userId);
 
+
+
+
           if (currentSet.size > 0) {
             typingUsersByDialog.set(dialogId, currentSet);
           } else {
@@ -8702,6 +9152,62 @@
         pageRoot.classList.remove("booting");
         setStatus(message, statusType);
         showToast(message, toastType);
+
+        // Reset inputs and error states
+        const nameInput = document.getElementById("name");
+        const emailInput = document.getElementById("email");
+        const passwordInput = document.getElementById("password");
+        const verificationCodeInput = document.getElementById("verification-code");
+        const submitButton = document.getElementById("submit-button");
+        const statusNode = document.getElementById("status");
+        const verificationStatus = document.getElementById("verification-status");
+
+        if (nameInput) nameInput.value = "";
+        if (emailInput) emailInput.value = "";
+        if (passwordInput) passwordInput.value = "";
+        if (verificationCodeInput) verificationCodeInput.value = "";
+        if (submitButton) submitButton.disabled = false;
+        if (statusNode) statusNode.textContent = "";
+        if (verificationStatus) verificationStatus.textContent = "";
+
+        [nameInput, emailInput, passwordInput, verificationCodeInput].forEach((input) => {
+          if (input) {
+            input.classList.remove("invalid");
+            input.removeAttribute("aria-invalid");
+            delete input.dataset.validationMessage;
+          }
+        });
+
+        // Clear active timers or pending auth states if any
+        if (typeof resendTimer !== "undefined" && resendTimer) {
+          window.clearInterval(resendTimer);
+          resendTimer = null;
+        }
+        if (typeof pendingAuthPayload !== "undefined") pendingAuthPayload = null;
+        if (typeof pendingAuthMode !== "undefined") pendingAuthMode = null;
+        if (typeof pendingAuthEmail !== "undefined") pendingAuthEmail = null;
+        if (typeof resendAttemptsLeft !== "undefined") resendAttemptsLeft = 3;
+
+        // Reset verification UI to standard login form
+        const loginInner = document.getElementById("auth-login-inner");
+        const verificationInner = document.getElementById("auth-verification-inner");
+        const metaRow = document.querySelector(".meta-row");
+        if (loginInner) {
+          loginInner.classList.remove("hidden");
+          loginInner.classList.remove("fade-out");
+        }
+        if (verificationInner) {
+          verificationInner.classList.add("hidden");
+          verificationInner.classList.remove("fade-out");
+        }
+        if (metaRow) {
+          metaRow.classList.remove("hidden");
+          metaRow.style.opacity = "1";
+        }
+        if (typeof animateModeChange === "function") {
+          mode = "login";
+          animateModeChange("login");
+        }
       };
 
       const getDialogTypeLabel = (type) => dialogTypeLabels[type] || String(type || "chat");
@@ -9339,6 +9845,9 @@
           realtimeSocket.close();
         }
 
+
+
+
         realtimeSocket = null;
         realtimeLastActivityAt = 0;
         rerenderDialogsIfVisible();
@@ -9534,12 +10043,16 @@
           window.clearInterval(realtimeDialogResyncTimer);
           realtimeDialogResyncTimer = null;
         }
+        // Periodic resync is disabled to avoid double-loading, wasteful HTTP polling,
+        // and layout-reflow scroll jumps in dialogues, groups, and everywhere.
+        /*
         realtimeDialogResyncTimer = window.setInterval(() => {
           if (!currentDialogPublicId || !currentDialogSnapshot || document.visibilityState === "hidden") {
             return;
           }
           void reconcileCurrentDialogMessages("periodic");
         }, 4000);
+        */
       };
 
       const sendCurrentPresence = () => {
@@ -9555,6 +10068,9 @@
           dialogId: currentDialogId || null
         }));
       };
+
+
+
 
       const getMessageStatusMarkup = (message, isOutgoing) => {
         if (!isOutgoing) {
@@ -9595,40 +10111,91 @@
         return '<span class="message-checks message-checks-double">' + doubleChecksIcon + '</span>';
       };
 
+      const mediaUrlToBlobUrlCache = new Map();
+      const registerMediaBlobUrl = (mediaUrl, blobUrl) => {
+        if (!mediaUrl || !blobUrl) return;
+        mediaUrlToBlobUrlCache.set(mediaUrl, blobUrl);
+        if (mediaUrlToBlobUrlCache.size > 100) {
+          const firstKey = mediaUrlToBlobUrlCache.keys().next().value;
+          const firstVal = mediaUrlToBlobUrlCache.get(firstKey);
+          if (firstVal && firstVal.startsWith("blob:")) {
+            try {
+              URL.revokeObjectURL(firstVal);
+            } catch {}
+          }
+          mediaUrlToBlobUrlCache.delete(firstKey);
+        }
+      };
+      window.registerMediaBlobUrl = registerMediaBlobUrl;
+      window.mediaUrlToBlobUrlCache = mediaUrlToBlobUrlCache;
+
       const resolvePublicMediaUrl = (rawUrl) => {
-        const value = String(rawUrl || "").trim();
+        var value = String(rawUrl || "").trim();
         if (!value) {
           return "";
         }
-        if (value.startsWith("/v/")) {
-          return "https://cdn.thegrapht.su" + value;
+        if (typeof mediaUrlToBlobUrlCache !== "undefined" && mediaUrlToBlobUrlCache.has(value)) {
+          return mediaUrlToBlobUrlCache.get(value);
         }
-        if (/^https?:\/\/web\.thegrapht\.su\/v\//i.test(value)) {
-          return value.replace(/^https?:\/\/web\.thegrapht\.su/i, "https://cdn.thegrapht.su");
+        if (value.startsWith("blob:") || value.startsWith("data:")) {
+          return value;
+        }
+        if (value.startsWith("/v/")) {
+          value = "https://cdn.thegrapht.su" + value;
+        } else if (/^https?:\/\/web\.thegrapht\.su\/v\//i.test(value)) {
+          value = value.replace(/^https?:\/\/web\.thegrapht\.su/i, "https://cdn.thegrapht.su");
+        }
+        if (typeof legacySessionToken !== "undefined" && legacySessionToken) {
+          value = value + (value.indexOf("?") >= 0 ? "&" : "?") + "token=" + encodeURIComponent(legacySessionToken);
         }
         return value;
       };
 
       const resolveWebMediaUrlFallback = (rawUrl) => {
-        const value = String(rawUrl || "").trim();
+        var value = String(rawUrl || "").trim();
         if (!value) {
           return "";
         }
-        if (value.startsWith("/v/")) {
-          return "https://web.thegrapht.su" + value;
+        if (value.startsWith("blob:") || value.startsWith("data:")) {
+          return value;
         }
-        if (/^https?:\/\/cdn\.thegrapht\.su\/v\//i.test(value)) {
-          return value.replace(/^https?:\/\/cdn\.thegrapht\.su/i, "https://web.thegrapht.su");
+        var cleanUrl = value.split("?")[0];
+        if (cleanUrl.startsWith("/v/")) {
+          value = "https://web.thegrapht.su" + cleanUrl;
+        } else if (/^https?:\/\/cdn\.thegrapht\.su\/v\//i.test(cleanUrl)) {
+          value = cleanUrl.replace(/^https?:\/\/cdn\.thegrapht\.su/i, "https://web.thegrapht.su");
+        } else {
+          value = cleanUrl;
         }
-        return "";
+        if (typeof legacySessionToken !== "undefined" && legacySessionToken) {
+          value = value + (value.indexOf("?") >= 0 ? "&" : "?") + "token=" + encodeURIComponent(legacySessionToken);
+        }
+        return value;
       };
 
       const renderImageLinkHtml = (message, caption, senderName, extraClass = "") => {
         const publicMediaUrl = resolvePublicMediaUrl(message.mediaUrl);
-        const fallbackMediaUrl = resolveWebMediaUrlFallback(publicMediaUrl);
+        const fallbackMediaUrl = resolveWebMediaUrlFallback(message.mediaUrl);
+        const isPending = message.localStatus === "pending";
+
+        let spinnerMarkup = "";
+        if (isPending) {
+          spinnerMarkup =
+            '<div class="m3-spinner-container">' +
+              '<svg class="m3-spinner" viewBox="0 0 48 48">' +
+                '<circle class="m3-spinner-track" cx="24" cy="24" r="18" fill="none" stroke-width="4"></circle>' +
+                '<circle class="m3-spinner-active" cx="24" cy="24" r="18" fill="none" stroke-width="4" stroke-dasharray="113" stroke-dashoffset="56"></circle>' +
+              '</svg>' +
+            '</div>';
+        }
+
+        const shellClass = "message-image-shell" + (isPending ? " is-pending" : "");
+        const imageClass = "message-image" + (isPending ? " message-image-pending" : "");
+
         return '<button class="message-image-link' + extraClass + '" type="button" data-image-url="' + escapeHtml(publicMediaUrl) + '" data-image-fallback-url="' + escapeHtml(fallbackMediaUrl) + '" data-sender-name="' + escapeHtml(senderName) + '" data-sender-id="' + escapeHtml(message.senderId || "") + '" data-created-at="' + escapeHtml(message.createdAt || "") + '">' +
-          '<span class="message-image-shell"' + getImageShellStyle(message) + '>' +
-            '<img class="message-image" src="' + escapeHtml(publicMediaUrl) + '" data-fallback-src="' + escapeHtml(fallbackMediaUrl) + '" alt="' + escapeHtml(caption || "Photo") + '" loading="lazy" decoding="async" fetchpriority="low" />' +
+          '<span class="' + shellClass + '"' + getImageShellStyle(message) + '>' +
+            '<img class="' + imageClass + '" src="' + escapeHtml(publicMediaUrl) + '" data-fallback-src="' + escapeHtml(fallbackMediaUrl) + '" alt="' + escapeHtml(caption || "Photo") + '" loading="lazy" decoding="async" fetchpriority="low" />' +
+            spinnerMarkup +
           '</span>' +
         '</button>';
       };
@@ -9670,7 +10237,7 @@
 
       const renderAudioMessageHtml = (message) => {
         const publicMediaUrl = resolvePublicMediaUrl(message.mediaUrl);
-        const fallbackMediaUrl = resolveWebMediaUrlFallback(publicMediaUrl);
+        const fallbackMediaUrl = resolveWebMediaUrlFallback(message.mediaUrl);
         const displayName = getAudioDisplayName(message);
         const durationSeconds = Number(message?.attachmentDurationSeconds) || 0;
         const sizeBytes = Number(message?.attachmentSize) || 0;
@@ -10260,7 +10827,12 @@
           const selector = '[data-message-id="' + CSS.escape(String(options.replaceMessageId)) + '"]';
           const previousNode = messageList.querySelector(selector);
           hadReplacement = Boolean(previousNode);
-          previousNode?.remove();
+          if (previousNode && nodes.length > 0) {
+            const primaryNewNode = nodes.shift();
+            previousNode.replaceWith(primaryNewNode);
+          } else {
+            previousNode?.remove();
+          }
         }
 
         const dedupedNodes = nodes.filter((node) => {
@@ -10424,6 +10996,9 @@
           }
         });
       };
+
+
+
 
       composerIconImages.forEach((node) => {
         node.addEventListener("dragstart", (event) => event.preventDefault());
@@ -11253,6 +11828,9 @@
         finishTopProgressSeek();
       });
 
+
+
+
       messageList.addEventListener("click", (event) => {
         const groupAvatarHit = event.target instanceof Element ? event.target.closest(".group-incoming-avatar-hit[data-sender-id]") : null;
         if (groupAvatarHit) {
@@ -11344,6 +11922,9 @@
         }
         setViewerZoom(viewerZoom + 0.15);
       });
+
+
+
 
       let isLoadingOlderMessages = false;
       const hasMoreOlderMessages = {};
@@ -11440,12 +12021,24 @@
       };
 
       messageList.addEventListener("scroll", () => {
-        if (!suppressBottomLockCancel) {
-          markManualScrollIntent();
-        }
         rememberCurrentDialogScrollTop();
         syncChatScrollBottomButton();
         updateScrollDayIndicator();
+
+        if (computeIsNearChatBottom()) {
+          const unreadDivider = messageList.querySelector(".message-unread-divider");
+          if (unreadDivider && !unreadDivider.dataset.dismissing) {
+            unreadDivider.dataset.dismissing = "true";
+            unreadDivider.style.opacity = "0";
+            unreadDivider.style.height = "0";
+            unreadDivider.style.margin = "0";
+            unreadDivider.style.padding = "0";
+            unreadDivider.style.border = "none";
+            window.setTimeout(() => {
+              unreadDivider.remove();
+            }, 300);
+          }
+        }
         
         // Only load more if we are near top AND there is actually content to scroll!
         if (messageList.scrollTop < 50 && messageList.scrollHeight > messageList.clientHeight) {
@@ -11471,6 +12064,17 @@
         }
       }, { passive: true });
 
+      messageList.addEventListener("keydown", (event) => {
+        const target = event.target;
+        if (target && (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.isContentEditable)) {
+          return;
+        }
+        const scrollKeys = ["ArrowUp", "ArrowDown", "PageUp", "PageDown", "Home", "End", " "];
+        if (scrollKeys.includes(event.key) && !suppressBottomLockCancel) {
+          markManualScrollIntent();
+        }
+      }, { passive: true });
+
       chatScrollBottom.addEventListener("click", () => {
         scrollMessagesToBottom("smooth");
         requestAnimationFrame(() => {
@@ -11478,6 +12082,9 @@
           syncChatScrollBottomButton();
         });
       });
+
+
+
 
       chatSearchToggle.addEventListener("click", () => {
         if (!currentDialogSnapshot) {
@@ -11629,6 +12236,30 @@
       };
       chatProfileName?.addEventListener("contextmenu", onProfileIdentityContextMenu);
       chatProfileLink?.addEventListener("contextmenu", onProfileIdentityContextMenu);
+
+      const sidebarProfileUsernameEl = document.getElementById("sidebar-profile-username");
+      const sidebarProfileUsernameRow = sidebarProfileUsernameEl?.closest(".sidebar-profile-info-row");
+
+      sidebarProfileUsernameRow?.addEventListener("contextmenu", (event) => {
+        const rawUsername = String(currentUserUsername || "").trim();
+        if (!rawUsername) {
+          return;
+        }
+        const profileUrl = "https://web.thegrapht.su/@" + encodeURIComponent(rawUsername);
+
+        const isSameTargetOpen = Boolean(
+          profileLinkContextMenu?.classList.contains("open")
+          && profileLinkContextMenuState?.profileUrl
+          && String(profileLinkContextMenuState.profileUrl) === String(profileUrl)
+        );
+
+        event.preventDefault();
+        if (isSameTargetOpen) {
+          closeProfileLinkContextMenu();
+          return;
+        }
+        openProfileLinkContextMenu(event, profileUrl);
+      });
 
       document.getElementById("chat-profile-notifications-btn")?.addEventListener("click", () => {
         if (currentDialogSnapshot?.type !== "group" || !currentDialogSnapshot?.publicId) {
@@ -12023,6 +12654,9 @@
         void applyCallOutputDevice(callOutputDevice.value);
       });
 
+
+
+
       const connectRealtime = () => {
         if (!realtimeEnabled || !isPrimaryActiveTab) {
           return;
@@ -12069,7 +12703,12 @@
           touchRealtimeActivity();
           startRealtimeHealthChecks();
           sendCurrentPresence();
-          void reconcileCurrentDialogMessages("ws_open", { force: true });
+          if (isFirstRealtimeConnection) {
+            isFirstRealtimeConnection = false;
+            wsInfo("ws_open_initial_skip_reconcile");
+          } else {
+            void reconcileCurrentDialogMessages("ws_open_reconnect", { force: true });
+          }
         });
 
         realtimeSocket.addEventListener("message", (event) => {
@@ -12342,6 +12981,7 @@
       };
 
 
+
       const setStatus = (message, type) => {
         statusNode.textContent = message;
         statusNode.className = "status " + type;
@@ -12358,6 +12998,19 @@
       const sidebarComposeGroup = document.getElementById("sidebar-compose-group");
       const sidebarComposePrivate = document.getElementById("sidebar-compose-private");
       const groupCreatePanel = document.getElementById("group-create-panel");
+
+      const gsapOpenSidebar = (panel) => {
+        if (!panel) return;
+        panel.classList.add("open");
+        panel.setAttribute("aria-hidden", "false");
+      };
+
+      const gsapCloseSidebar = (panel) => {
+        if (!panel) return;
+        panel.classList.remove("open");
+        panel.setAttribute("aria-hidden", "true");
+      };
+
       const groupCreateClose = document.getElementById("group-create-close");
       const groupCreateSearchInput = document.getElementById("group-create-search-input");
       const groupCreateStepMembersTitle = document.getElementById("group-create-step-members-title");
@@ -12698,7 +13351,7 @@
       };
 
       const closeGroupCreatePanel = () => {
-        workspaceSidebar?.classList.remove("group-create-open");
+        gsapCloseSidebar(groupCreatePanel);
         workspaceSidebar?.classList.remove("group-create-next-enabled");
         workspaceSidebar?.classList.remove("group-create-step2-open");
         groupCreateMode = "group";
@@ -12709,9 +13362,6 @@
           groupCreateSearchInput.placeholder = "Add people...";
         }
         setGroupCreateStep(1);
-        if (groupCreatePanel) {
-          groupCreatePanel.setAttribute("aria-hidden", "true");
-        }
       };
 
       const openGroupCreatePanel = () => {
@@ -12735,10 +13385,7 @@
         setGroupCreateStep(1);
         renderGroupCreateList();
         renderGroupCreateDetails();
-        workspaceSidebar?.classList.add("group-create-open");
-        if (groupCreatePanel) {
-          groupCreatePanel.setAttribute("aria-hidden", "false");
-        }
+        gsapOpenSidebar(groupCreatePanel);
         window.setTimeout(() => {
           groupCreateSearchInput?.focus();
         }, 40);
@@ -12964,6 +13611,12 @@
             const dialogId = button.getAttribute("data-dialog-id");
             const publicId = button.getAttribute("data-public-id");
             if (dialogId && publicId) {
+              // Immediately add is-hidden class to the badge if it exists to trigger the CSS transition
+              const badgeEl = button.querySelector(".dialog-unread-badge");
+              if (badgeEl && !badgeEl.classList.contains("is-hidden")) {
+                badgeEl.classList.add("is-hidden");
+              }
+
               allDialogs = allDialogs.map((dialog) => dialog.publicId === publicId
                 ? { ...dialog, unreadCount: 0 }
                 : dialog);
@@ -12973,7 +13626,12 @@
                   unreadCount: 0
                 };
               }
-              renderDialogs(allDialogs);
+
+              // Delay renderDialogs to allow transition to complete
+              window.setTimeout(() => {
+                renderDialogs(allDialogs);
+              }, 220);
+
               void loadDialog(publicId);
             }
           });
@@ -13251,6 +13909,7 @@
         }
 
         messageList.classList.remove("saved-empty");
+        suppressBottomLockCancel = true;
         const hasRestoreScrollTop = typeof options.restoreScrollTop === "number";
         const shouldPrepareBottom = options.scrollBehavior !== "none" && !hasRestoreScrollTop;
         const forceBottomForRender = shouldPrepareBottom && (options.scrollBehavior === "auto" || options.forceScrollBottom);
@@ -13264,7 +13923,9 @@
           const nextTop = Math.min(maxTop, Math.max(0, Number(options.restoreScrollTop) || 0));
           messageList.scrollTop = nextTop;
           requestAnimationFrame(() => {
-            suppressBottomLockCancel = false;
+            window.setTimeout(() => {
+              suppressBottomLockCancel = false;
+            }, 150);
             syncChatScrollBottomButton();
             rememberCurrentDialogScrollTop();
           });
@@ -13291,13 +13952,34 @@
             ? normalizedItems.filter((item) => item?.groupIncomingMeta).length
             : 0
         });
-        messageList.innerHTML = normalizedItems.map((item) => (
-          item.kind === "day"
+
+        let firstUnreadMessageId = null;
+        if (dialog.unreadCount > 0 && mergedMessages.length >= dialog.unreadCount) {
+          const sorted = sortMessagesChronologically(mergedMessages);
+          const firstUnread = sorted[sorted.length - dialog.unreadCount];
+          if (firstUnread) {
+            firstUnreadMessageId = firstUnread.id;
+          }
+        }
+
+        let renderedUnreadDivider = false;
+        messageList.innerHTML = normalizedItems.map((item) => {
+          let prefix = "";
+          if (firstUnreadMessageId && !renderedUnreadDivider && item.messages) {
+            const hasFirstUnread = item.messages.some(m => m && m.id === firstUnreadMessageId);
+            if (hasFirstUnread) {
+              renderedUnreadDivider = true;
+              prefix = '<div class="message-unread-divider"><span>Unread Messages</span></div>';
+            }
+          }
+          const html = item.kind === "day"
             ? renderDaySeparator(item.dayValue)
             : item.kind === "album"
               ? renderAlbumMessage(item.messages, { groupIncomingMeta: item.groupIncomingMeta })
-              : renderSingleMessage(item.messages[0], { groupIncomingMeta: item.groupIncomingMeta })
-        )).join("");
+              : renderSingleMessage(item.messages[0], { groupIncomingMeta: item.groupIncomingMeta });
+          return prefix + html;
+        }).join("");
+
         if (typeof normalizeMessageDaySeparators === "function") {
           normalizeMessageDaySeparators();
         }
@@ -13319,11 +14001,17 @@
             if (forceBottomForRender && !bottomLockCanceledByUser) {
               hardPinMessagesToBottom(renderLockToken);
             }
+            window.setTimeout(() => {
+              suppressBottomLockCancel = false;
+            }, 150);
             finishMessagesLoading();
             return;
           }
           if (!applyRestoredScrollTop()) {
             syncChatScrollBottomButton();
+            window.setTimeout(() => {
+              suppressBottomLockCancel = false;
+            }, 150);
           }
           finishMessagesLoading();
         });
@@ -13335,11 +14023,7 @@
           ...(options.headers || {})
         };
 
-        const host = String(window.location.hostname || "").toLowerCase();
-        const canUseLegacyAuthorizationHeader = host === "localhost"
-          || host === "127.0.0.1"
-          || host.endsWith(".local");
-        if (canUseLegacyAuthorizationHeader && legacySessionToken && !requestHeaders.Authorization) {
+        if (legacySessionToken && !requestHeaders.Authorization) {
           requestHeaders.Authorization = "Bearer " + legacySessionToken;
         }
 
@@ -13464,7 +14148,9 @@
         const loadToken = activeDialogLoadToken;
         const cachedPayload = options.skipCache ? null : getDialogPayloadCache(publicId);
         
-        const shouldRestoreScrollTop = Boolean(options.restoreScrollOnOpen) || visitedDialogsInSession.has(publicId);
+        const shouldRestoreScrollTop = Boolean(options.restoreScrollOnOpen)
+          || visitedDialogsInSession.has(publicId)
+          || dialogScrollTopCache.has(publicId);
         const restoredScrollTop = shouldRestoreScrollTop ? getDialogScrollTop(publicId) : 0;
         const hasRestoredScrollTop = shouldRestoreScrollTop
           && Number.isFinite(restoredScrollTop)
@@ -13511,6 +14197,51 @@
           }).catch(() => {});
           sendCurrentPresence();
           return;
+        }
+
+        const previewDialog = allDialogs.find((d) => d.publicId === publicId);
+        if (previewDialog) {
+          currentDialogId = previewDialog.id;
+          currentDialogPublicId = previewDialog.publicId;
+          currentDialogSnapshot = previewDialog;
+          currentMessagesSnapshot = [];
+          
+          chatTitle.textContent = previewDialog.title;
+          chatSubtitle.textContent = formatDialogSubtitle(previewDialog) || "";
+          syncChatHeaderMeta();
+          syncChatProfilePanel();
+          
+          workspaceMain.classList.remove("empty-chat");
+          workspaceMain.classList.add("open-chat");
+          chatStage.classList.remove("empty");
+          chatStage.classList.add("open-chat");
+          chatComposer.style.display = "flex";
+          
+          syncMobileChatOpenState(true);
+          setSidebarComposeOpen(false);
+          setSidebarMenuOpen(false);
+          syncComposerState();
+        } else {
+          currentDialogId = "";
+          currentDialogPublicId = publicId;
+          currentDialogSnapshot = null;
+          currentMessagesSnapshot = [];
+          
+          chatTitle.textContent = "Loading...";
+          chatSubtitle.textContent = "";
+          syncChatHeaderMeta();
+          syncChatProfilePanel();
+          
+          workspaceMain.classList.remove("empty-chat");
+          workspaceMain.classList.add("open-chat");
+          chatStage.classList.remove("empty");
+          chatStage.classList.add("open-chat");
+          chatComposer.style.display = "none";
+          
+          syncMobileChatOpenState(true);
+          setSidebarComposeOpen(false);
+          setSidebarMenuOpen(false);
+          syncComposerState();
         }
 
         pendingAutoBottomDialogPublicId = publicId;
@@ -13964,10 +14695,17 @@
           return;
         }
 
-        if (event.key === "Escape" && workspaceSidebar?.classList.contains("group-create-open")) {
+        if (event.key === "Escape" && groupCreatePanel && groupCreatePanel.getAttribute("aria-hidden") === "false") {
           event.preventDefault();
           event.stopPropagation();
           closeGroupCreatePanel();
+          return;
+        }
+
+        if (event.key === "Escape" && sidebarProfilePanel && sidebarProfilePanel.getAttribute("aria-hidden") === "false") {
+          event.preventDefault();
+          event.stopPropagation();
+          closeSidebarProfilePanel();
           return;
         }
 
@@ -14250,9 +14988,68 @@
         groupCreateNameTouched = true;
       });
 
+      const sidebarProfilePanel = document.getElementById("sidebar-profile-panel");
+
+
+      const sidebarProfileBack = document.getElementById("sidebar-profile-back");
+      const sidebarProfileAvatarEl = document.getElementById("sidebar-profile-avatar");
+      const sidebarProfileDisplayName = document.getElementById("sidebar-profile-display-name");
+      const sidebarProfileUsername = document.getElementById("sidebar-profile-username");
+
+      const openSidebarProfilePanel = () => {
+        if (!sidebarProfilePanel) { return; }
+        // Populate display name
+        const displayName = String(currentUserDisplayName || currentUserUsername || currentUserEmail || "You").trim();
+        if (sidebarProfileDisplayName) {
+          sidebarProfileDisplayName.textContent = displayName;
+        }
+        // Populate username
+        const rawUsername = String(currentUserUsername || "").trim();
+        if (sidebarProfileUsername) {
+          sidebarProfileUsername.textContent = rawUsername ? ("@" + rawUsername) : "";
+        }
+        // Populate avatar
+        if (sidebarProfileAvatarEl) {
+          const avatarUrl = String(currentUserAvatarUrl || "").trim();
+          if (avatarUrl) {
+            sidebarProfileAvatarEl.innerHTML = '<img class="generated-avatar-photo" src="' + escapeHtml(avatarUrl) + '" alt="' + escapeHtml(displayName) + '" />';
+            sidebarProfileAvatarEl.removeAttribute("style");
+          } else {
+            const meta = typeof getAvatarMeta === "function"
+              ? getAvatarMeta(currentUserId || displayName, displayName)
+              : null;
+            if (meta) {
+              sidebarProfileAvatarEl.innerHTML = '<img class="generated-avatar-photo" src="' + meta.avatarUrl + '" alt="' + escapeHtml(meta.letter || "?") + '" />';
+              sidebarProfileAvatarEl.style.cssText = meta.style || "";
+            } else {
+              const seed = String(currentUserId || displayName || "?");
+              const palettes = [["#6cb5ff","#4a8fe9"],["#ff9f6c","#ea6d4a"],["#7de3b2","#39b67f"],["#f7a6d8","#d66ab3"],["#b49cff","#7f69ee"],["#ffd56a","#f0a93e"],["#7fd4ff","#3d8fe0"]];
+              let h = 0;
+              for (let i = 0; i < seed.length; i++) { h = ((h << 5) - h + seed.charCodeAt(i)) | 0; }
+              const pal = palettes[Math.abs(h) % palettes.length];
+              const raw = displayName.trim().split(/\s+/);
+              let ltr = raw.length >= 2 ? (raw[0][0] || "") + (raw[1][0] || "") : displayName.slice(0, 2);
+              ltr = ltr.toUpperCase();
+              const svg = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128"><defs><linearGradient id="pg" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="' + pal[0] + '"/><stop offset="100%" stop-color="' + pal[1] + '"/></linearGradient></defs><circle cx="64" cy="64" r="64" fill="url(#pg)"/><text x="50%" y="54%" dominant-baseline="middle" text-anchor="middle" fill="#ffffff" font-family="Roboto,sans-serif" font-size="56" font-weight="700">' + escapeHtml(ltr) + '</text></svg>';
+              sidebarProfileAvatarEl.innerHTML = '<img class="generated-avatar-photo" src="data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg) + '" alt="' + escapeHtml(ltr) + '" />';
+              sidebarProfileAvatarEl.style.cssText = "--avatar-start:" + pal[0] + ";--avatar-end:" + pal[1] + ";";
+            }
+          }
+        }
+        gsapOpenSidebar(sidebarProfilePanel);
+      };
+
+      const closeSidebarProfilePanel = () => {
+        gsapCloseSidebar(sidebarProfilePanel);
+      };
+
       sidebarMenuProfile?.addEventListener("click", () => {
         setSidebarMenuOpen(false);
-        showToast("Profile section will be available soon.", "info");
+        openSidebarProfilePanel();
+      });
+
+      sidebarProfileBack?.addEventListener("click", () => {
+        closeSidebarProfilePanel();
       });
 
       sidebarMenuSaved?.addEventListener("click", () => {
@@ -14332,6 +15129,12 @@
 
         if (!body || !currentDialogPublicId) {
           return;
+        }
+
+        const isGifUrl = (body.startsWith("http://") || body.startsWith("https://")) &&
+                         (body.split("?")[0].split("#")[0].toLowerCase().endsWith(".gif"));
+        if (isGifUrl) {
+          rememberRecentGif(body);
         }
 
         textMessageSendInFlight = true;
@@ -14502,7 +15305,7 @@
           const emojiChar = emojiTabIcons[section.key] || "";
           const emojiAssetUrl = getEmojiAssetUrl(emojiChar);
           const iconHtml = emojiAssetUrl
-            ? '<img class="emoji-picker-tab-image" src="' + escapeHtml(emojiAssetUrl) + '" alt="' + escapeHtml(emojiChar) + '" onerror="if(!this.src.includes(\'-fe0f\') && !this.dataset.triedFe0f){this.dataset.triedFe0f=true;this.src=this.src.replace(\'.png\',\'-fe0f.png\');}else if(this.src.includes(\'-fe0f\') && !this.dataset.triedNoFe0f){this.dataset.triedNoFe0f=true;this.src=this.src.replace(\'-fe0f.png\',\'.png\');}else{this.outerHTML=this.alt;}" aria-hidden="true" loading="lazy" decoding="async">'
+            ? '<img class="emoji-picker-tab-image" src="' + escapeHtml(emojiAssetUrl) + '" alt="' + escapeHtml(emojiChar) + '" onerror=\'if(!/-fe0f/.test(this.src) && !this.dataset.triedFe0f){this.dataset.triedFe0f=true;this.src=this.src.replace(/[.]png$/,"-fe0f.png");}else if(/-fe0f/.test(this.src) && !this.dataset.triedNoFe0f){this.dataset.triedNoFe0f=true;this.src=this.src.replace(/-fe0f[.]png$/,".png");}else{this.outerHTML=this.alt;}\' aria-hidden="true" loading="lazy" decoding="async">'
             : '<span class="emoji-picker-tab-fallback">' + escapeHtml(emojiChar) + '</span>';
 
           return '<button class="emoji-picker-tab' + (index === 0 ? ' active' : '') + '" type="button" data-emoji-tab="' + section.key + '" aria-label="' + escapeHtml(section.title) + '">' +
@@ -14522,7 +15325,7 @@
                   '<button class="emoji-button" type="button" data-emoji-value="' + escapeHtml(emoji) + '" aria-label="' + escapeHtml(emoji) + '">' +
                     (
                       emojiAssetUrl
-                        ? '<img class="emoji-button-image" src="' + escapeHtml(emojiAssetUrl) + '" alt="' + escapeHtml(emoji) + '" onerror="if(!this.src.includes(\'-fe0f\') && !this.dataset.triedFe0f){this.dataset.triedFe0f=true;this.src=this.src.replace(\'.png\',\'-fe0f.png\');}else if(this.src.includes(\'-fe0f\') && !this.dataset.triedNoFe0f){this.dataset.triedNoFe0f=true;this.src=this.src.replace(\'-fe0f.png\',\'.png\');}else{this.outerHTML=this.alt;}" aria-hidden="true" loading="lazy" decoding="async">'
+                        ? '<img class="emoji-button-image" src="' + escapeHtml(emojiAssetUrl) + '" alt="' + escapeHtml(emoji) + '" onerror=\'if(!/-fe0f/.test(this.src) && !this.dataset.triedFe0f){this.dataset.triedFe0f=true;this.src=this.src.replace(/[.]png$/,"-fe0f.png");}else if(/-fe0f/.test(this.src) && !this.dataset.triedNoFe0f){this.dataset.triedNoFe0f=true;this.src=this.src.replace(/-fe0f[.]png$/,".png");}else{this.outerHTML=this.alt;}\' aria-hidden="true" loading="lazy" decoding="async">'
                         : '<span class="emoji-button-image" aria-hidden="true">' + escapeHtml(emoji) + '</span>'
                     ) +
                   '</button>'
@@ -14598,6 +15401,92 @@
       emojiPicker.addEventListener("mouseleave", () => {
         scheduleEmojiPickerClose();
       });
+
+      if (emojiPickerSearch) {
+        emojiPickerSearch.addEventListener("input", () => {
+          if (pickerMode === "emoji") {
+            renderEmojiPicker();
+          } else {
+            renderGifPicker();
+          }
+        });
+      }
+
+      if (emojiModeTabEmoji) {
+        emojiModeTabEmoji.addEventListener("click", (e) => {
+          e.preventDefault();
+          setPickerMode("emoji");
+        });
+      }
+
+      if (emojiModeTabGif) {
+        emojiModeTabGif.addEventListener("click", (e) => {
+          e.preventDefault();
+          setPickerMode("gif");
+        });
+      }
+
+      // Touch-swipe support on emoji picker slide container
+      const emojiPickerSlideContainer = emojiPicker.querySelector(".emoji-picker-slide-container");
+      if (emojiPickerSlideContainer && emojiPickerSlideTrack) {
+        let startX = 0;
+        let startY = 0;
+        let isSwiping = false;
+
+        emojiPickerSlideContainer.addEventListener("pointerdown", (e) => {
+          if (e.target.closest("button") || e.target.closest("input") || e.target.closest("textarea")) {
+            return;
+          }
+          startX = e.clientX;
+          startY = e.clientY;
+          isSwiping = true;
+          emojiPickerSlideTrack.classList.add("no-transition");
+        });
+
+        document.addEventListener("pointermove", (e) => {
+          if (!isSwiping) return;
+          const diffX = e.clientX - startX;
+          const diffY = e.clientY - startY;
+
+          // If vertical scroll is dominating, cancel swipe
+          if (Math.abs(diffY) > Math.abs(diffX) && Math.abs(diffY) > 10) {
+            isSwiping = false;
+            emojiPickerSlideTrack.classList.remove("no-transition");
+            emojiPickerSlideTrack.style.transform = pickerMode === "gif" ? "translateX(-50%)" : "translateX(0)";
+            return;
+          }
+
+          const pickerWidth = emojiPickerSlideContainer.offsetWidth;
+          const basePercent = pickerMode === "gif" ? -50 : 0;
+          const changePercent = (diffX / (pickerWidth * 2)) * 100;
+          let newPercent = basePercent + changePercent;
+          
+          newPercent = Math.max(-55, Math.min(5, newPercent));
+          
+          emojiPickerSlideTrack.style.transform = "translateX(" + newPercent + "%)";
+        });
+
+        const endSwipe = (e) => {
+          if (!isSwiping) return;
+          isSwiping = false;
+          emojiPickerSlideTrack.classList.remove("no-transition");
+
+          const diffX = e.clientX - startX;
+          const pickerWidth = emojiPickerSlideContainer.offsetWidth;
+          const threshold = pickerWidth * 0.2;
+
+          if (diffX < -threshold && pickerMode === "emoji") {
+            setPickerMode("gif");
+          } else if (diffX > threshold && pickerMode === "gif") {
+            setPickerMode("emoji");
+          } else {
+            emojiPickerSlideTrack.style.transform = pickerMode === "gif" ? "translateX(-50%)" : "translateX(0)";
+          }
+        };
+
+        document.addEventListener("pointerup", endSwipe);
+        document.addEventListener("pointercancel", endSwipe);
+      }
 
       document.addEventListener("pointerdown", (event) => {
         const target = event.target instanceof Element ? event.target : null;
@@ -14847,6 +15736,913 @@
         event.preventDefault();
         void addPendingImageAttachments(files);
       });
+
+      // TheGraphT Chat AI Panel interactions
+      const sidebarAiPanel = document.getElementById("sidebar-ai-panel");
+      const sidebarAiButton = document.getElementById("sidebar-ai-button");
+      const sidebarAiClose = document.getElementById("sidebar-ai-close");
+      const sidebarAiMessages = document.getElementById("sidebar-ai-messages");
+      const sidebarAiInput = document.getElementById("sidebar-ai-input");
+      const sidebarAiSend = document.getElementById("sidebar-ai-send");
+      const sidebarAiPillsWrap = document.getElementById("sidebar-ai-pills-wrap");
+      const sidebarAiPills = document.getElementById("sidebar-ai-pills");
+      let aiHistory = [];
+      let activeAiController = null;
+
+      // Translate vertical mouse wheel scrolling to horizontal scroll for pills wrapper
+      if (sidebarAiPillsWrap) {
+        sidebarAiPillsWrap.addEventListener("wheel", (e) => {
+          if (e.deltaY !== 0) {
+            e.preventDefault();
+            sidebarAiPillsWrap.scrollTo({
+              left: sidebarAiPillsWrap.scrollLeft + e.deltaY * 1.5,
+              behavior: "auto"
+            });
+          }
+        });
+      }
+
+      // Gather visible chat messages for AI context
+      const gatherChatContext = () => {
+        const messageListEl = document.getElementById("message-list");
+        if (!messageListEl) return "";
+        
+        // Only target actual messages or rows in the main chat pane (excluding AI sidebar messages)
+        const messageEls = messageListEl.querySelectorAll(".message, .group-incoming-row, .message-system-row");
+        const lines = [];
+        const maxMessages = 40;
+        const start = Math.max(0, messageEls.length - maxMessages);
+        
+        const peerName = currentDialogSnapshot ? (currentDialogSnapshot.title || "Собеседник") : "Собеседник";
+        const myName = workspaceUserName ? (workspaceUserName.textContent || "Я") : "Я";
+        
+        for (let i = start; i < messageEls.length; i++) {
+          const el = messageEls[i];
+          
+          // System message row
+          if (el.classList.contains("message-system-row")) {
+            const pill = el.querySelector(".message-system-pill");
+            if (pill) {
+              lines.push("[Системное сообщение]: " + pill.textContent.trim());
+            }
+            continue;
+          }
+          
+          // Check incoming state
+          let isIncoming = el.classList.contains("incoming");
+          if (el.classList.contains("group-incoming-row")) {
+            isIncoming = true;
+          }
+          
+          const bubble = el.classList.contains("message") ? el : el.querySelector(".message");
+          if (!bubble) continue;
+          
+          // Determine sender name
+          let sender = "";
+          if (isIncoming) {
+            const groupSender = el.querySelector(".group-incoming-sender");
+            sender = groupSender ? groupSender.textContent.trim() : peerName;
+          } else {
+            sender = myName + " (Вы)";
+          }
+          
+          // Find text
+          const body = bubble.querySelector(".message-body, .message-text");
+          let text = body ? body.textContent.trim() : "";
+          
+          // Handle attachment fallback descriptions
+          if (!text) {
+            const msgType = bubble.getAttribute("data-message-type");
+            const attName = bubble.getAttribute("data-attachment-name");
+            if (msgType === "image") {
+              text = "[Изображение/Фото: " + (attName || "Без названия") + "]";
+            } else if (msgType === "audio") {
+              text = "[Голосовое сообщение/Аудио: " + (attName || "Без названия") + "]";
+            }
+          }
+          
+          if (text) {
+            lines.push(sender + ": " + text);
+          }
+        }
+        
+        const activeChatMeta = "=== ИНФОРМАЦИЯ ОБ ОТКРЫТОМ ЧАТЕ ===\n" +
+          "Название чата: " + peerName + "\n" +
+          "Тип чата: " + (currentDialogSnapshot ? (currentDialogSnapshot.type || "Личный чат") : "Личный чат") + "\n" +
+          "Текущий пользователь: " + myName + "\n" +
+          "=================================\n\n" +
+          lines.join("\n");
+        return activeChatMeta;
+      };
+
+      // Smart Context-Aware Randomized Pill Generator
+      const getPillsForContext = (isInitial, replyText = "") => {
+        const contextText = gatherChatContext();
+        const isRussian = /[а-яА-ЯёЁ]/.test(contextText) || /[а-яА-ЯёЁ]/.test(replyText) || (navigator.language && navigator.language.toLowerCase().startsWith("ru"));
+        const peerName = currentDialogSnapshot ? (currentDialogSnapshot.title || (isRussian ? "собеседник" : "partner")) : (isRussian ? "собеседник" : "partner");
+
+        // Analyze topics in the context & replyText
+        const lowerContext = (contextText + " " + replyText).toLowerCase();
+        
+        const hasCode = lowerContext.includes("code") || lowerContext.includes("function") || lowerContext.includes("код") || lowerContext.includes("функция") || lowerContext.includes("ошибка") || lowerContext.includes("баг") || lowerContext.includes("js") || lowerContext.includes("html") || lowerContext.includes("css");
+        const hasVideo = lowerContext.includes("video") || lowerContext.includes("media") || lowerContext.includes("видео") || lowerContext.includes("медиа") || lowerContext.includes("монтаж") || lowerContext.includes("клип") || lowerContext.includes("звук") || lowerContext.includes("аудио") || lowerContext.includes("youtube");
+        const hasTasks = lowerContext.includes("plan") || lowerContext.includes("task") || lowerContext.includes("checklist") || lowerContext.includes("план") || lowerContext.includes("задач") || lowerContext.includes("цель") || lowerContext.includes("сделать") || lowerContext.includes("todo") || lowerContext.includes("проект");
+        const hasChat = lowerContext.includes("summary") || lowerContext.includes("chat") || lowerContext.includes("conversation") || lowerContext.includes("выжимка") || lowerContext.includes("чат") || lowerContext.includes("переписка") || lowerContext.includes("сообщение") || lowerContext.includes("диалог");
+
+        const ruPools = {
+          initial: {
+            general: [
+              { label: "💬 Сделай выжимку чата", prompt: "Сделай краткую выжимку этого чата" },
+              { label: "✍️ Помоги ответить", prompt: "Помоги мне написать вежливый ответ на последние сообщения" },
+              { label: "🔍 Проанализируй чат", prompt: "Что мне нужно знать об этой переписке?" },
+              { label: "🌐 Переведи на английский", prompt: "Переведи последние сообщения на английский язык" },
+              { label: "💡 Предложи идею", prompt: "Дай мне интересную или креативную идею на сегодня" },
+              { label: "📅 Составь план дня", prompt: "Помоги мне составить эффективный план на день" },
+              { label: "❓ Что ты умеешь?", prompt: "Расскажи, чем ты можешь мне помочь в этом чате?" }
+            ],
+            chat: [
+              { label: "📊 Кто активнее в чате?", prompt: "Кто самый активный участник в этой переписке?" },
+              { label: "📌 Главные темы беседы", prompt: "Какие ключевые темы обсуждались в этом чате?" },
+              { label: "🤝 О чем договорились?", prompt: "Сделай список договоренностей и решений из этого чата" },
+              { label: "🎭 Какой тон беседы?", prompt: "Какая атмосфера и тон общения в этом чате?" }
+            ],
+            code: [
+              { label: "💻 Объясни этот код", prompt: "Объясни, как работает этот программный код в переписке" },
+              { label: "⚡ Оптимизируй код", prompt: "Как можно сделать этот код более быстрым и понятным?" },
+              { label: "🐞 Найди баги", prompt: "Проверь код в этом чате на наличие ошибок или уязвимостей" }
+            ],
+            video: [
+              { label: "🎬 Сценарий для видео", prompt: "Предложи креативный сценарий для короткого видео" },
+              { label: "✂️ Как быстро монтировать?", prompt: "Дай советы по быстрому и качественному монтажу видео" },
+              { label: "🎙️ Как улучшить звук?", prompt: "Как записать чистый и качественный звук для ролика?" }
+            ],
+            tasks: [
+              { label: "📝 Чеклист задач", prompt: "Составь структурированный список задач на основе чата" },
+              { label: "🚀 Какие наши шаги?", prompt: "Каковы наши следующие шаги по обсуждаемому проекту?" },
+              { label: "🎯 Расставь приоритеты", prompt: "Помоги мне расставить приоритеты для этих задач" }
+            ]
+          },
+          followUp: {
+            general: [
+              { label: "Продолжай", prompt: "Продолжай развивать эту мысль дальше" },
+              { label: "Объясни подробнее", prompt: "Можешь объяснить этот момент подробнее?" },
+              { label: "Дай мне пример", prompt: "Приведи практический пример для этого" },
+              { label: "Можно попроще?", prompt: "Объясни это простыми словами для новичка" },
+              { label: "Какие альтернативы?", prompt: "Какие еще есть варианты или альтернативные подходы?" },
+              { label: "Дай практический совет", prompt: "Дай мне один конкретный совет, который я могу применить прямо сейчас" }
+            ],
+            chat: [
+              { label: "Сделай выжимку подробнее", prompt: "Сделай более детальную выжимку этой беседы" },
+              { label: "Как вежливо ответить " + peerName + "?", prompt: "Напиши несколько вариантов вежливого ответа для " + peerName },
+              { label: "Как отказать " + peerName + "?", prompt: "Напиши вежливый и мягкий отказ для " + peerName },
+              { label: "Выдели самое важное", prompt: "Покажи только самые критически важные тезисы из этого" }
+            ],
+            code: [
+              { label: "Напиши тест-кейс", prompt: "Напиши модульный тест (unit test) для этой функции" },
+              { label: "Сделай рефакторинг", prompt: "Предложи красивый рефакторинг этого решения" },
+              { label: "Добавь комментарии", prompt: "Добавь понятные JSDoc комментарии к коду" }
+            ],
+            video: [
+              { label: "Напиши детальный план", prompt: "Напиши подробную раскадровку для этого видео-сценария" },
+              { label: "Какие инструменты нужны?", prompt: "Какой софт лучше использовать для реализации этого?" },
+              { label: "Как продвигать ролик?", prompt: "Дай советы по продвижению этого видео на YouTube или TikTok" }
+            ],
+            tasks: [
+              { label: "Преврати в чеклист", prompt: "Оформи эти пункты в виде красивого чеклиста задач" },
+              { label: "С чего начать?", prompt: "Какой самый первый шаг мне нужно сделать прямо сейчас?" },
+              { label: "Оцени риски", prompt: "Какие основные сложности или риски могут возникнуть при реализации?" }
+            ]
+          }
+        };
+
+        const enPools = {
+          initial: {
+            general: [
+              { label: "💬 Summarize chat", prompt: "Summarize this chat for me concisely" },
+              { label: "✍️ Help me reply", prompt: "Help me write a polite reply to the last messages" },
+              { label: "🔍 Analyze chat", prompt: "What should I know about this conversation?" },
+              { label: "🌐 Translate to English", prompt: "Translate the last messages in this chat to English" },
+              { label: "💡 Give me an idea", prompt: "Give me an interesting or creative idea for today" },
+              { label: "📅 Plan my day", prompt: "Help me create an efficient schedule for my day" },
+              { label: "❓ What can you do?", prompt: "Explain what features you have and how you can help me here" }
+            ],
+            chat: [
+              { label: "📊 Who is most active?", prompt: "Who is the most active participant in this chat?" },
+              { label: "📌 Main discussion topics", prompt: "What are the primary topics discussed in this conversation?" },
+              { label: "🤝 What was agreed?", prompt: "Make a list of agreements and decisions from this chat" },
+              { label: "🎭 Conversation tone?", prompt: "What is the tone and mood of this conversation?" }
+            ],
+            code: [
+              { label: "💻 Explain code", prompt: "Explain how the code in this chat works" },
+              { label: "⚡ Optimize code", prompt: "How can this code be made faster and more readable?" },
+              { label: "🐞 Find bugs", prompt: "Check the code in this chat for bugs or vulnerabilities" }
+            ],
+            video: [
+              { label: "🎬 Video script idea", prompt: "Suggest a creative script for a short video" },
+              { label: "✂️ Faster video editing", prompt: "Give me tips on editing videos faster and better" },
+              { label: "🎙️ High-quality audio", prompt: "How do I record clear, professional audio for videos?" }
+            ],
+            tasks: [
+              { label: "📝 Task checklist", prompt: "Create a structured task checklist based on this conversation" },
+              { label: "🚀 Our next steps", prompt: "What are our next steps for this project?" },
+              { label: "🎯 Prioritize tasks", prompt: "Help me prioritize these items" }
+            ]
+          },
+          followUp: {
+            general: [
+              { label: "Continue", prompt: "Please continue expanding on this" },
+              { label: "Explain further", prompt: "Can you explain this point in more detail?" },
+              { label: "Give me an example", prompt: "Give me a practical, real-world example of this" },
+              { label: "Can you simplify?", prompt: "Explain this in very simple terms for a beginner" },
+              { label: "What are the alternatives?", prompt: "What are other ways or alternative approaches to this?" },
+              { label: "Give a practical tip", prompt: "Give me one highly actionable tip I can use right now" }
+            ],
+            chat: [
+              { label: "Detailed summary", prompt: "Provide a more detailed summary of this chat" },
+              { label: "Reply to " + peerName, prompt: "Write a polite response to " + peerName },
+              { label: "Decline " + peerName, prompt: "Write a polite and soft decline message to " + peerName },
+              { label: "Show main bullet points", prompt: "Extract only the absolute key bullet points from this" }
+            ],
+            code: [
+              { label: "Write a test case", prompt: "Write a unit test for this code" },
+              { label: "Refactor this code", prompt: "Suggest a elegant refactoring of this code block" },
+              { label: "Add comments", prompt: "Add clear documentation or comments to this code" }
+            ],
+            video: [
+              { label: "Write a detailed plan", prompt: "Write a step-by-step storyboard for this video script" },
+              { label: "What tools to use?", prompt: "What software or tools do you recommend for this?" },
+              { label: "How to promote?", prompt: "How do I promote this video effectively on YouTube/TikTok?" }
+            ],
+            tasks: [
+              { label: "Turn into checklist", prompt: "Format these items as a clean checklist" },
+              { label: "Where should I start?", prompt: "What is the very first step I should take right now?" },
+              { label: "Identify risks", prompt: "What are the potential risks or roadblocks here?" }
+            ]
+          }
+        };
+
+        const activePools = isRussian ? ruPools : enPools;
+        const currentCategory = isInitial ? activePools.initial : activePools.followUp;
+
+        // Collect matching items
+        let candidates = [...currentCategory.general];
+        if (hasChat) candidates = candidates.concat(currentCategory.chat);
+        if (hasCode) candidates = candidates.concat(currentCategory.code);
+        if (hasVideo) candidates = candidates.concat(currentCategory.video);
+        if (hasTasks) candidates = candidates.concat(currentCategory.tasks);
+
+        // Shuffle candidates using a secure random sort
+        const shuffled = candidates.sort(() => 0.5 - Math.random());
+
+        // Deduplicate based on label and take first 3 or 4
+        const unique = [];
+        const seen = new Set();
+        for (const item of shuffled) {
+          if (!seen.has(item.label)) {
+            seen.add(item.label);
+            unique.push(item);
+          }
+          if (unique.length >= (isInitial ? 4 : 3)) break;
+        }
+
+        return unique;
+      };
+
+      // Regenerate initial welcome pills
+      const regenerateInitialPills = () => {
+        if (!sidebarAiPills) return;
+        const pills = getPillsForContext(true);
+        sidebarAiPills.innerHTML = pills.map((p) => {
+          return '<button class="sidebar-ai-pill" type="button" data-prompt="' + escapeHtml(p.prompt) + '">' + escapeHtml(p.label) + '</button>';
+        }).join("");
+        
+        // Re-setup quick prompts clicking
+        sidebarAiPills.querySelectorAll(".sidebar-ai-pill").forEach((pill) => {
+          pill.addEventListener("click", () => {
+            const prompt = pill.getAttribute("data-prompt");
+            if (!prompt || !sidebarAiInput) return;
+            sidebarAiInput.value = prompt;
+            void sendAiMessage();
+          });
+        });
+      };
+
+      // Render follow-up suggestion pills after assistant reply
+      const renderFollowUps = (replyText) => {
+        const pills = getPillsForContext(false, replyText);
+        const wrap = document.createElement("div");
+        wrap.className = "sidebar-ai-follow-up";
+        pills.forEach((p) => {
+          const pill = document.createElement("button");
+          pill.className = "sidebar-ai-follow-up-pill";
+          pill.type = "button";
+          pill.textContent = p.label;
+          pill.addEventListener("click", () => {
+            if (sidebarAiInput) sidebarAiInput.value = p.prompt;
+            void sendAiMessage();
+          });
+          wrap.appendChild(pill);
+        });
+        sidebarAiMessages.appendChild(wrap);
+        sidebarAiMessages.scrollTo({ top: sidebarAiMessages.scrollHeight, behavior: "smooth" });
+      };
+
+      // Handle and render reply suggestions if present
+      const handleAiReplySuggestions = (fullReply, streamBubble) => {
+        const suggestionsWrap = document.getElementById("sidebar-ai-suggestions-wrap");
+        const suggestionsContainer = document.getElementById("sidebar-ai-suggestions");
+        if (!suggestionsWrap || !suggestionsContainer) return;
+
+        // Reset suggestions
+        suggestionsWrap.classList.add("hidden");
+        suggestionsContainer.innerHTML = "";
+
+        const suggestionsMatch = fullReply.match(/[SUGGESTIONS]([\s\S]*?)[/SUGGESTIONS]/);
+        if (suggestionsMatch) {
+          const rawBlock = suggestionsMatch[1];
+          const suggestions = rawBlock
+            .split("\n")
+            .map((s) => s.trim().replace(/^[-*•+]\s*/, "").replace(/^\[[-*•+]\s*\]/, "").trim())
+            .filter((s) => s.length > 0);
+
+          if (suggestions.length > 0) {
+            suggestions.forEach((text) => {
+              const pill = document.createElement("button");
+              pill.className = "sidebar-ai-suggestion-pill";
+              pill.type = "button";
+              pill.textContent = text;
+
+              pill.addEventListener("click", () => {
+                const composerInput = document.getElementById("composer-input");
+                if (composerInput) {
+                  // Flyer Animation
+                  const rectStart = pill.getBoundingClientRect();
+                  const rectEnd = composerInput.getBoundingClientRect();
+
+                  const flyer = document.createElement("div");
+                  flyer.className = "sidebar-ai-flyer-pill";
+                  flyer.textContent = text;
+                  flyer.style.position = "fixed";
+                  flyer.style.left = rectStart.left + "px";
+                  flyer.style.top = rectStart.top + "px";
+                  flyer.style.width = rectStart.width + "px";
+                  flyer.style.height = rectStart.height + "px";
+                  flyer.style.zIndex = "99999";
+                  flyer.style.pointerEvents = "none";
+                  flyer.style.transition = "all 0.6s cubic-bezier(0.16, 1, 0.3, 1)";
+                  document.body.appendChild(flyer);
+
+                  // Trigger animation
+                  requestAnimationFrame(() => {
+                    flyer.style.left = rectEnd.left + "px";
+                    flyer.style.top = rectEnd.top + "px";
+                    flyer.style.width = rectEnd.width + "px";
+                    flyer.style.height = rectEnd.height + "px";
+                    flyer.style.opacity = "0";
+                    flyer.style.transform = "scale(0.85) rotate(1deg)";
+                  });
+
+                  setTimeout(() => {
+                    flyer.remove();
+                    composerInput.value = text;
+                    composerInput.dispatchEvent(new Event("input", { bubbles: true }));
+                    composerInput.focus();
+
+                    // Hide suggestions after use
+                    suggestionsWrap.classList.add("hidden");
+                  }, 600);
+                } else {
+                  // Fallback
+                  const suggestionsAlert = document.createElement("div");
+                  suggestionsAlert.style.position = "fixed";
+                  suggestionsAlert.style.bottom = "80px";
+                  suggestionsAlert.style.right = "20px";
+                  suggestionsAlert.style.background = "rgba(239, 68, 68, 0.9)";
+                  suggestionsAlert.style.color = "#fff";
+                  suggestionsAlert.style.padding = "8px 16px";
+                  suggestionsAlert.style.borderRadius = "8px";
+                  suggestionsAlert.style.zIndex = "99999";
+                  suggestionsAlert.style.fontSize = "13px";
+                  suggestionsAlert.textContent = "Please open a chat to insert this reply.";
+                  document.body.appendChild(suggestionsAlert);
+                  setTimeout(() => suggestionsAlert.remove(), 2500);
+                }
+              });
+
+              suggestionsContainer.appendChild(pill);
+            });
+
+            suggestionsWrap.classList.remove("hidden");
+          }
+
+          // Strip [SUGGESTIONS] block from message bubble text
+          const cleanText = fullReply.replace(/[SUGGESTIONS][\s\S]*?[/SUGGESTIONS]/, "").trim();
+          streamBubble.innerHTML = parseMarkdown(cleanText);
+        }
+      };
+
+      const parseMarkdown = (txt) => {
+        if (!txt) return "";
+        var html = escapeHtml(txt);
+        // Code Block
+        var codeBlockRegex = new RegExp(String.fromCharCode(96) + "{3}([^]*?)" + String.fromCharCode(96) + "{3}", "g");
+        html = html.replace(codeBlockRegex, "<pre><code>$1</code></pre>");
+        // Inline Code
+        var inlineCodeRegex = new RegExp(String.fromCharCode(96) + "([^" + String.fromCharCode(96) + String.fromCharCode(10) + "]+)" + String.fromCharCode(96), "g");
+        html = html.replace(inlineCodeRegex, "<code>$1</code>");
+        // URL Linkification
+        var urlRegex = new RegExp("(https?:\/\/[^\s<>'\"]+[^\s\.\,\<\>\'\"])", "gi");
+        html = html.replace(urlRegex, '<a href="$1" target="_blank">$1</a>');
+        // Bold-Italic (***)
+        var boldItalicRegex = new RegExp("[*][*][*]([^*]+)[*][*][*]", "g");
+        html = html.replace(boldItalicRegex, "<strong><em>$1</em></strong>");
+        // Bold (**)
+        var boldRegex = new RegExp("[*][*]([^*]+)[*][*]", "g");
+        html = html.replace(boldRegex, "<strong>$1</strong>");
+        // Italic (*)
+        var italicRegex = new RegExp("[*]([^*]+)[*]", "g");
+        html = html.replace(italicRegex, "<em>$1</em>");
+        
+        return html.split(String.fromCharCode(10)).map(function(p) {
+          return p.trim() ? "<p>" + p + "</p>" : "";
+        }).join("");
+      };
+
+      const renderAiBubble = (text, isUser = false) => {
+        const bubble = document.createElement("div");
+        bubble.className = "sidebar-ai-bubble " + (isUser ? "user" : "assistant");
+        
+        if (!isUser) {
+          bubble.innerHTML = parseMarkdown(text);
+        } else {
+          bubble.innerHTML = "<p>" + escapeHtml(text) + "</p>";
+        }
+        
+        sidebarAiMessages.appendChild(bubble);
+        sidebarAiMessages.scrollTo({ top: sidebarAiMessages.scrollHeight, behavior: "smooth" });
+      };
+
+      const sendAiMessage = async () => {
+        // Toggle Stop Generation behavior if currently streaming
+        if (activeAiController) {
+          activeAiController.abort();
+          activeAiController = null;
+          if (sidebarAiSend) {
+            sidebarAiSend.classList.remove("is-streaming");
+            sidebarAiSend.innerHTML = '<span class="material-symbols-rounded" aria-hidden="true">arrow_upward</span>';
+          }
+          
+          // Append italicized stopped label
+          const stopLabel = document.createElement("div");
+          stopLabel.className = "sidebar-ai-stopped-label";
+          stopLabel.innerHTML = "<em>Your message was stopped</em>";
+          sidebarAiMessages.appendChild(stopLabel);
+          sidebarAiMessages.scrollTo({ top: sidebarAiMessages.scrollHeight, behavior: "smooth" });
+          return;
+        }
+
+        // Reset suggestions panel
+        const suggestionsWrap = document.getElementById("sidebar-ai-suggestions-wrap");
+        const suggestionsContainer = document.getElementById("sidebar-ai-suggestions");
+        if (suggestionsWrap && suggestionsContainer) {
+          suggestionsWrap.classList.add("hidden");
+          suggestionsContainer.innerHTML = "";
+        }
+
+        const messageText = sidebarAiInput.value.trim();
+        if (!messageText) return;
+        
+        sidebarAiInput.value = "";
+        sidebarAiInput.style.height = "auto";
+        
+        // Remove welcome screen if it exists
+        const welcome = sidebarAiMessages.querySelector(".sidebar-ai-welcome");
+        if (welcome) {
+          welcome.remove();
+        }
+        
+        // Render user message bubble
+        renderAiBubble(messageText, true);
+        
+        // Hide initial quick prompt pills after first message
+        if (sidebarAiPillsWrap) sidebarAiPillsWrap.style.display = "none";
+
+        // Remove previous follow-up pills
+        sidebarAiMessages.querySelectorAll(".sidebar-ai-follow-up").forEach((el) => el.remove());
+
+        // Create an empty assistant bubble that will be filled in real-time
+        const streamBubble = document.createElement("div");
+        streamBubble.className = "sidebar-ai-bubble assistant is-generating";
+        streamBubble.innerHTML = '<span class="sidebar-ai-cursor"></span>';
+        sidebarAiMessages.appendChild(streamBubble);
+        sidebarAiMessages.scrollTo({ top: sidebarAiMessages.scrollHeight, behavior: "smooth" });
+
+        // Build chat context from visible messages
+        const chatContext = gatherChatContext();
+        let fullReply = "";
+        
+        // Calculate exact user local time and timezone
+        const userTimeZone = Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
+        const userLocalTime = new Date().toLocaleString("ru-RU", {
+          timeZone: userTimeZone,
+          weekday: "long",
+          year: "numeric",
+          month: "long",
+          day: "numeric",
+          hour: "2-digit",
+          minute: "2-digit",
+          second: "2-digit",
+          timeZoneName: "short"
+        });
+        
+        activeAiController = new AbortController();
+        if (sidebarAiSend) {
+          sidebarAiSend.classList.add("is-streaming");
+          sidebarAiSend.innerHTML = '<div style="width: 12px; height: 12px; background: #ea5656; border-radius: 2px;"></div>';
+        }
+
+        // --- GOOGLE GEMINI PRO CLIENT-SIDE OR BACKEND PROXY STREAMING ---
+        if (currentAiModel === "pro") {
+          const apiKey = localStorage.getItem("gemini_api_key");
+          if (apiKey) {
+            try {
+              console.log("[TheGraphT AI] Direct client-side streaming to Google Gemini Pro. Model: gemini-2.5-flash");
+              const contents = [];
+              let finalSystemText = systemPrompt;
+              if (chatContext) {
+                finalSystemText += "\n\n[CONTEXT: CURRENTLY OPEN CHAT WINDOW]\n" + chatContext;
+              }
+              contents.push({
+                role: "user",
+                parts: [{ text: finalSystemText + "\n\nUser Prompt: " + messageText }]
+              });
+              
+              const res = await fetch("https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:streamGenerateContent?key=" + apiKey, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                signal: activeAiController.signal,
+                body: JSON.stringify({
+                  contents: contents,
+                  generationConfig: {
+                    temperature: 0.6,
+                    maxOutputTokens: 384
+                  }
+                })
+              });
+              
+              if (!res.ok) {
+                const data = await res.json().catch(() => ({}));
+                throw new Error(data.error?.message || "Gemini API returned status: " + res.status);
+              }
+              
+              const reader = res.body.getReader();
+              const decoder = new TextDecoder();
+              let buffer = "";
+              let chunkIndex = 0;
+              
+              while (true) {
+                const { done, value } = await reader.read();
+                if (done) break;
+                
+                chunkIndex++;
+                console.log("[TheGraphT AI] Direct Direct-Chunk #" + chunkIndex + ", size: " + value.length + " bytes");
+                
+                buffer += decoder.decode(value, { stream: true });
+                
+                let startIdx = 0;
+                while (true) {
+                  const openBrace = buffer.indexOf("{", startIdx);
+                  if (openBrace === -1) break;
+                  
+                  let braceCount = 0;
+                  let closeBrace = -1;
+                  for (let i = openBrace; i < buffer.length; i++) {
+                    if (buffer[i] === "{") braceCount++;
+                    else if (buffer[i] === "}") {
+                      braceCount--;
+                      if (braceCount === 0) {
+                        closeBrace = i;
+                        break;
+                      }
+                    }
+                  }
+                  
+                  if (closeBrace === -1) break;
+                  
+                  const jsonStr = buffer.slice(openBrace, closeBrace + 1);
+                  startIdx = closeBrace + 1;
+                  
+                  try {
+                    const parsed = JSON.parse(jsonStr);
+                    const text = parsed.candidates?.[0]?.content?.parts?.[0]?.text || "";
+                    if (text) {
+                      console.log("[TheGraphT AI] Direct Parsed token successfully:", JSON.stringify(text));
+                      fullReply += text;
+                      streamBubble.innerHTML = parseMarkdown(fullReply) + '<span class="sidebar-ai-cursor"></span>';
+                      sidebarAiMessages.scrollTo({ top: sidebarAiMessages.scrollHeight, behavior: "smooth" });
+                    }
+                  } catch (_) {}
+                }
+                
+                if (startIdx > 0) {
+                  buffer = buffer.slice(startIdx);
+                }
+              }
+              
+              if (fullReply) {
+                streamBubble.innerHTML = parseMarkdown(fullReply);
+                handleAiReplySuggestions(fullReply, streamBubble);
+              } else {
+                streamBubble.innerHTML = "<p>Could not get a response.</p>";
+              }
+              
+              renderFollowUps(fullReply);
+              
+              aiHistory.push({ role: "user", content: messageText });
+              aiHistory.push({ role: "assistant", content: fullReply });
+              if (aiHistory.length > 20) {
+                aiHistory = aiHistory.slice(-20);
+              }
+            } catch (err) {
+              if (err.name === "AbortError" || err.message.includes("aborted")) {
+                return;
+              }
+              streamBubble.innerHTML = "<p>Error: " + escapeHtml(err.message) + "</p>";
+            } finally {
+              activeAiController = null;
+              streamBubble.classList.remove("is-generating");
+              if (sidebarAiSend) {
+                sidebarAiSend.classList.remove("is-streaming");
+                sidebarAiSend.innerHTML = '<span class="material-symbols-rounded" aria-hidden="true">arrow_upward</span>';
+              }
+            }
+            return;
+          }
+        }
+
+        // --- LOCAL OLLAMA BASE OR SECURE GEMINI PRO STREAMING ---
+        try {
+          console.log("[TheGraphT AI] Sending request to backend. Model:", currentAiModel, "Message length:", messageText.length);
+          const startTime = Date.now();
+          
+          const res = await fetch(apiBase + "/v1/ai/chat", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            signal: activeAiController.signal,
+            body: JSON.stringify({
+              message: messageText,
+              history: aiHistory,
+              chatContext: chatContext,
+              clientTime: userLocalTime,
+              clientTimeZone: userTimeZone,
+              model: currentAiModel
+            })
+          });
+          
+          console.log("[TheGraphT AI] Received response from backend. Status:", res.status, "Time taken:", Date.now() - startTime, "ms");
+          
+          if (!res.ok) {
+            const data = await res.json().catch(() => ({}));
+            console.error("[TheGraphT AI] Backend returned error status:", res.status, "Data:", data);
+            throw new Error(data.error || "AI is temporarily unavailable");
+          }
+          
+          const reader = res.body.getReader();
+          const decoder = new TextDecoder();
+          let buffer = "";
+          let chunkIndex = 0;
+
+          while (true) {
+            const { done, value } = await reader.read();
+            if (done) {
+              console.log("[TheGraphT AI] Stream reader completed.");
+              break;
+            }
+            
+            chunkIndex++;
+            console.log("[TheGraphT AI] Received chunk #" + chunkIndex + ", size: " + value.length + " bytes");
+            
+            buffer += decoder.decode(value, { stream: true });
+            const events = buffer.split(String.fromCharCode(10) + String.fromCharCode(10));
+            buffer = events.pop();
+            
+            for (const event of events) {
+              const dataLine = event.trim();
+              if (!dataLine.startsWith("data: ")) continue;
+              const payload = dataLine.slice(6);
+              if (payload === "[DONE]") {
+                console.log("[TheGraphT AI] Received [DONE] event payload.");
+                continue;
+              }
+              
+              try {
+                const parsed = JSON.parse(payload);
+                if (parsed.error) {
+                  console.error("[TheGraphT AI] Payload contains error field:", parsed.error);
+                  throw new Error(parsed.error);
+                }
+                if (parsed.token) {
+                  console.log("[TheGraphT AI] Parsed token successfully:", JSON.stringify(parsed.token));
+                  fullReply += parsed.token;
+                  streamBubble.innerHTML = parseMarkdown(fullReply) + '<span class="sidebar-ai-cursor"></span>';
+                  sidebarAiMessages.scrollTo({ top: sidebarAiMessages.scrollHeight, behavior: "smooth" });
+                }
+              } catch (parseErr) {
+                if (parseErr.message !== "Stream interrupted") {
+                  console.warn("[TheGraphT AI] JSON parse warning on payload:", payload, parseErr);
+                }
+              }
+            }
+          }
+          
+          if (fullReply) {
+            streamBubble.innerHTML = parseMarkdown(fullReply);
+            handleAiReplySuggestions(fullReply, streamBubble);
+          } else {
+            streamBubble.innerHTML = "<p>Could not get a response.</p>";
+          }
+          
+          renderFollowUps(fullReply);
+          
+          aiHistory.push({ role: "user", content: messageText });
+          aiHistory.push({ role: "assistant", content: fullReply });
+          if (aiHistory.length > 20) {
+            aiHistory = aiHistory.slice(-20);
+          }
+        } catch (err) {
+          if (err.name === "AbortError" || err.message.includes("aborted")) {
+            return;
+          }
+          console.error("[TheGraphT AI] Error inside the streaming loop:", err);
+          streamBubble.innerHTML = "<p>Error: " + escapeHtml(err.message) + "</p>";
+        } finally {
+          activeAiController = null;
+          streamBubble.classList.remove("is-generating");
+          if (sidebarAiSend) {
+            sidebarAiSend.classList.remove("is-streaming");
+            sidebarAiSend.innerHTML = '<span class="material-symbols-rounded" aria-hidden="true">arrow_upward</span>';
+          }
+        }
+      };
+
+      if (sidebarAiButton) {
+        sidebarAiButton.addEventListener("click", () => {
+          gsapOpenSidebar(sidebarAiPanel);
+          
+          // Regenerate initial pills when opening the panel
+          regenerateInitialPills();
+          if (sidebarAiPillsWrap && sidebarAiMessages.querySelector(".sidebar-ai-welcome")) {
+            sidebarAiPillsWrap.style.display = "block";
+          }
+          
+          window.setTimeout(() => {
+            sidebarAiInput?.focus();
+          }, 150);
+        });
+      }
+
+      if (sidebarAiClose) {
+        sidebarAiClose.addEventListener("click", () => {
+          gsapCloseSidebar(sidebarAiPanel);
+        });
+      }
+
+      // Close on Escape press
+      window.addEventListener("keydown", (e) => {
+        if (e.key === "Escape" && sidebarAiPanel && sidebarAiPanel.getAttribute("aria-hidden") === "false") {
+          gsapCloseSidebar(sidebarAiPanel);
+        }
+      });
+
+      if (sidebarAiInput) {
+        // Auto-grow textarea height
+        sidebarAiInput.addEventListener("input", () => {
+          sidebarAiInput.style.height = "auto";
+          sidebarAiInput.style.height = sidebarAiInput.scrollHeight + "px";
+        });
+        
+        // Enter key to send (Shift+Enter for new line)
+        sidebarAiInput.addEventListener("keydown", (e) => {
+          if (e.key === "Enter" && !e.shiftKey) {
+            e.preventDefault();
+            void sendAiMessage();
+          }
+        });
+      }
+
+      if (sidebarAiSend) {
+        sidebarAiSend.addEventListener("click", () => {
+          void sendAiMessage();
+        });
+      }
+
+      // --- MODEL SELECTOR & GEMINI API KEY LOGIC ---
+      const sidebarAiModelSelectorBtn = document.getElementById("sidebar-ai-model-selector-btn");
+      const sidebarAiSelectedModelName = document.getElementById("sidebar-ai-selected-model-name");
+      const sidebarAiSelectedModelIcon = document.getElementById("sidebar-ai-selected-model-icon");
+      const sidebarAiSelectorChevron = document.getElementById("sidebar-ai-selector-chevron");
+      const sidebarAiModelMenu = document.getElementById("sidebar-ai-model-menu");
+      const sidebarAiCheckBase = document.getElementById("sidebar-ai-check-base");
+      const sidebarAiCheckPro = document.getElementById("sidebar-ai-check-pro");
+      
+      let currentAiModel = "base";
+      localStorage.setItem("sidebar_ai_model", "base");
+
+      const updateSelectedModelUI = () => {
+        if (sidebarAiCheckPro) {
+          sidebarAiCheckPro.textContent = currentAiModel === "pro" ? "check" : "";
+          sidebarAiCheckPro.style.color = currentAiModel === "pro" ? "#6366f1" : "#9da5b4";
+        }
+        
+        if (sidebarAiCheckBase) {
+          sidebarAiCheckBase.textContent = currentAiModel === "base" ? "check" : "";
+        }
+        
+        if (sidebarAiSelectedModelName) {
+          sidebarAiSelectedModelName.textContent = currentAiModel === "pro" ? "TheGraphT Chat Pro" : "TheGraphT Chat (Base)";
+        }
+        
+        if (sidebarAiSelectedModelIcon) {
+          sidebarAiSelectedModelIcon.textContent = currentAiModel === "pro" ? "auto_awesome" : "mode_fan";
+          sidebarAiSelectedModelIcon.style.color = currentAiModel === "pro" ? "#a5b4fc" : "#9da5b4";
+        }
+        
+        sidebarAiModelMenu?.querySelectorAll(".sidebar-ai-model-menu-item").forEach((el) => {
+          const mod = el.getAttribute("data-model");
+          el.classList.toggle("active", mod === currentAiModel);
+        });
+      };
+
+      if (sidebarAiModelSelectorBtn) {
+        sidebarAiModelSelectorBtn.addEventListener("click", (e) => {
+          e.stopPropagation();
+          const isOpen = sidebarAiModelMenu?.classList.contains("open");
+          sidebarAiModelMenu?.classList.toggle("open", !isOpen);
+          sidebarAiModelMenu?.setAttribute("aria-hidden", isOpen ? "true" : "false");
+          if (sidebarAiSelectorChevron) {
+            sidebarAiSelectorChevron.style.transform = isOpen ? "rotate(0)" : "rotate(180deg)";
+          }
+        });
+      }
+
+      window.addEventListener("click", () => {
+        if (sidebarAiModelMenu?.classList.contains("open")) {
+          sidebarAiModelMenu.classList.remove("open");
+          sidebarAiModelMenu.setAttribute("aria-hidden", "true");
+          if (sidebarAiSelectorChevron) {
+            sidebarAiSelectorChevron.style.transform = "rotate(0)";
+          }
+        }
+      });
+
+      sidebarAiModelMenu?.querySelectorAll(".sidebar-ai-model-menu-item").forEach((el) => {
+        el.addEventListener("click", (e) => {
+          e.stopPropagation();
+          const modelType = el.getAttribute("data-model");
+          
+          if (modelType === "base") {
+            currentAiModel = "base";
+            localStorage.setItem("sidebar_ai_model", "base");
+            updateSelectedModelUI();
+          } else if (modelType === "pro") {
+            // Pro model is locked until June 15
+            const proAlert = document.createElement("div");
+            proAlert.style.position = "fixed";
+            proAlert.style.bottom = "80px";
+            proAlert.style.right = "20px";
+            proAlert.style.left = "20px";
+            proAlert.style.background = "linear-gradient(135deg, #1e1b4b, #312e81)";
+            proAlert.style.border = "1px solid rgba(99, 102, 241, 0.35)";
+            proAlert.style.color = "#c7d2fe";
+            proAlert.style.padding = "16px";
+            proAlert.style.borderRadius = "16px";
+            proAlert.style.zIndex = "99999";
+            proAlert.style.fontSize = "14px";
+            proAlert.style.boxShadow = "0 12px 32px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(99, 102, 241, 0.15)";
+            proAlert.style.display = "flex";
+            proAlert.style.flexDirection = "column";
+            proAlert.style.gap = "8px";
+            proAlert.style.transition = "all 0.3s ease";
+            
+            proAlert.innerHTML = '<div style="display:flex; align-items:center; gap:8px; font-weight:700; color:#fff;"><span class="material-symbols-rounded" style="color:#a5b4fc; font-size:18px;">lock</span>TheGraphT Chat Pro</div><div style="font-size:13px; opacity:0.9; line-height:1.4;">Интеллектуальная модель станет доступна <strong>15 июня</strong>! Мы готовим для вас самое мощное ИИ-обновление.</div>';
+            document.body.appendChild(proAlert);
+            setTimeout(() => {
+              proAlert.style.opacity = "0";
+              proAlert.style.transform = "translateY(8px)";
+              setTimeout(() => proAlert.remove(), 300);
+            }, 4000);
+          }
+          
+          sidebarAiModelMenu.classList.remove("open");
+          if (sidebarAiSelectorChevron) sidebarAiSelectorChevron.style.transform = "rotate(0)";
+        });
+      });
+
+      // Initial call to sync UI
+      updateSelectedModelUI();
+
+      // Setup initial quick prompts clicking & trigger first load generation
+      regenerateInitialPills();
 
 
       const messageHighlightTimers = new Map();
@@ -15115,8 +16911,20 @@
           }
           const mediaUrl = apiBase + "/v1/messages/" + encodeURIComponent(messageId) + "/media";
 
+          const requestHeaders = {};
+          const host = String(window.location.hostname || "").toLowerCase();
+          const isDesktop = host === "" || (typeof window !== "undefined" && (!!window.tgDesktop || !!window.__TAURI_INTERNALS__));
+          const canUseLegacyAuthorizationHeader = host === "localhost"
+            || host === "127.0.0.1"
+            || host.endsWith(".local")
+            || isDesktop;
+          if (canUseLegacyAuthorizationHeader && typeof legacySessionToken !== "undefined" && legacySessionToken) {
+            requestHeaders.Authorization = "Bearer " + legacySessionToken;
+          }
+
           const response = await fetch(mediaUrl, {
-            credentials: "include"
+            credentials: "include",
+            headers: requestHeaders
           });
           if (!response.ok) {
             throw new Error("Failed to download file.");
@@ -15591,6 +17399,241 @@
             logoutButton.disabled = false;
           })();
         });
+      }
+
+      const verificationInner = document.getElementById("auth-verification-inner");
+      const verificationEmailTarget = document.getElementById("verification-email-target");
+      const verificationForm = document.getElementById("verification-form");
+      const verificationCodeInput = document.getElementById("verification-code");
+      const verificationStatus = document.getElementById("verification-status");
+      const verifyButton = document.getElementById("verify-button");
+      const resendCodeButton = document.getElementById("resend-code-button");
+      const resendTimerText = document.getElementById("resend-timer-text");
+      const resendCountdown = document.getElementById("resend-countdown");
+      const resendAttemptsText = document.getElementById("resend-attempts-text");
+      const resendAttempts = document.getElementById("resend-attempts");
+      const verificationBackBtn = document.getElementById("verification-back-btn");
+      const loginInner = document.getElementById("auth-login-inner");
+      const metaRow = document.querySelector(".meta-row");
+
+      let resendTimer = null;
+      let resendAttemptsLeft = 3;
+      let pendingAuthPayload = null;
+      let pendingAuthMode = null;
+      let pendingAuthEmail = null;
+
+      const startResendCooldown = () => {
+        if (resendTimer) {
+          window.clearInterval(resendTimer);
+        }
+
+        if (resendCodeButton) {
+          resendCodeButton.disabled = true;
+        }
+        if (resendTimerText) {
+          resendTimerText.classList.remove("hidden");
+        }
+        
+        let secondsLeft = 60;
+        if (resendCountdown) {
+          resendCountdown.textContent = secondsLeft;
+        }
+
+        resendTimer = window.setInterval(() => {
+          secondsLeft -= 1;
+          if (resendCountdown) {
+            resendCountdown.textContent = secondsLeft;
+          }
+
+          if (secondsLeft <= 0) {
+            window.clearInterval(resendTimer);
+            resendTimer = null;
+            if (resendTimerText) {
+              resendTimerText.classList.add("hidden");
+            }
+            
+            if (resendAttemptsLeft > 0 && resendCodeButton) {
+              resendCodeButton.disabled = false;
+            }
+          }
+        }, 1000);
+      };
+
+      const updateAttemptsUI = () => {
+        if (resendAttempts) {
+          resendAttempts.textContent = resendAttemptsLeft;
+        }
+        if (resendAttemptsText) {
+          if (resendAttemptsLeft <= 0) {
+            resendAttemptsText.textContent = "No attempts remaining";
+            if (resendCodeButton) {
+              resendCodeButton.disabled = true;
+            }
+          } else {
+            resendAttemptsText.textContent = "Attempts remaining: " + resendAttemptsLeft;
+          }
+        }
+      };
+
+      if (resendCodeButton) {
+        resendCodeButton.addEventListener("click", () => {
+          if (resendAttemptsLeft <= 0) {
+            return;
+          }
+
+          void (async () => {
+            if (resendCodeButton) {
+              resendCodeButton.disabled = true;
+            }
+            try {
+              await fetchJson(apiBase + "/v1/auth/resend", {
+                method: "POST",
+                headers: {
+                  "Content-Type": "application/json"
+                },
+                body: JSON.stringify({
+                  email: pendingAuthEmail
+                })
+              });
+
+              resendAttemptsLeft -= 1;
+              updateAttemptsUI();
+              startResendCooldown();
+              
+              showToast("A new verification code has been requested.", "success");
+            } catch (error) {
+              showToast(error instanceof Error ? error.message : "Failed to request code.", "error");
+              if (resendCodeButton && resendAttemptsLeft > 0 && !resendTimer) {
+                resendCodeButton.disabled = false;
+              }
+            }
+          })();
+        });
+      }
+
+      if (verificationBackBtn) {
+        verificationBackBtn.addEventListener("click", () => {
+          if (resendTimer) {
+            window.clearInterval(resendTimer);
+            resendTimer = null;
+          }
+
+          if (verificationInner) {
+            verificationInner.classList.add("fade-out");
+          }
+
+          window.setTimeout(() => {
+            if (verificationInner) {
+              verificationInner.classList.add("hidden");
+              verificationInner.classList.remove("fade-out");
+            }
+
+            if (loginInner) {
+              loginInner.classList.remove("hidden");
+              loginInner.classList.add("fade-in");
+              void loginInner.offsetWidth;
+              loginInner.classList.remove("fade-in");
+            }
+
+            if (metaRow) {
+              metaRow.classList.remove("hidden");
+              metaRow.style.opacity = "1";
+            }
+          }, 300);
+        });
+      }
+
+      if (verificationForm) {
+        verificationForm.addEventListener("submit", async (event) => {
+          event.preventDefault();
+          
+          const enteredCode = verificationCodeInput ? verificationCodeInput.value.trim() : "";
+          if (verificationStatus) {
+            verificationStatus.textContent = "";
+            verificationStatus.className = "status";
+          }
+
+          if (!enteredCode) {
+            if (verificationCodeInput) {
+              verificationCodeInput.classList.add("invalid");
+              verificationCodeInput.focus();
+            }
+            if (verificationStatus) {
+              verificationStatus.textContent = "Please enter the code.";
+              verificationStatus.className = "status error";
+            }
+            return;
+          }
+
+          if (enteredCode.length !== 6) {
+            if (verificationCodeInput) {
+              verificationCodeInput.classList.add("invalid");
+              verificationCodeInput.focus();
+            }
+            if (verificationStatus) {
+              verificationStatus.textContent = "The code must be exactly 6 digits.";
+              verificationStatus.className = "status error";
+            }
+            return;
+          }
+
+          if (verifyButton) {
+            verifyButton.disabled = true;
+          }
+          if (verificationStatus) {
+            verificationStatus.textContent = "Verifying code...";
+            verificationStatus.className = "status success";
+          }
+
+          try {
+            const payload = await fetchJson(apiBase + "/v1/auth/verify", {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json"
+              },
+              body: JSON.stringify({
+                email: pendingAuthEmail,
+                code: enteredCode
+              })
+            });
+
+            if (payload?.token && typeof payload.token === "string") {
+              persistLegacySessionToken(payload.token);
+            } else {
+              persistLegacySessionToken("");
+            }
+
+            realtimeEnabled = true;
+            await loadWorkspace();
+            connectRealtime();
+
+            if (pendingAuthMode === "register") {
+              setStatus("Account created. Opening workspace.", "success");
+              showToast("Account created.", "success");
+            } else {
+              setStatus("Signed in. Loading chats.", "success");
+              showToast("Welcome back.", "success");
+            }
+          } catch (error) {
+            if (verificationStatus) {
+              verificationStatus.textContent = error instanceof Error ? error.message : "Verification failed.";
+              verificationStatus.className = "status error";
+            }
+            if (verifyButton) {
+              verifyButton.disabled = false;
+            }
+          }
+        });
+
+        if (verificationCodeInput) {
+          verificationCodeInput.addEventListener("input", () => {
+            verificationCodeInput.classList.remove("invalid");
+            if (verificationStatus && verificationStatus.classList.contains("error")) {
+              verificationStatus.textContent = "";
+              verificationStatus.className = "status";
+            }
+          });
+        }
       }
 
       form.addEventListener("submit", async (event) => {
