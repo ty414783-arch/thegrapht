@@ -158,7 +158,7 @@ export const uiControls = () => `
         if (!rawUsername) {
           return;
         }
-        const profileUrl = "https://web.thegrapht.su/@" + encodeURIComponent(rawUsername);
+        const profileUrl = window.location.origin + "/@" + encodeURIComponent(rawUsername);
 
         const isSameTargetOpen = Boolean(
           profileLinkContextMenu?.classList.contains("open")

@@ -421,14 +421,15 @@ export const profilePanel = () => `
             return "";
           }
         };
+        const originUrl = window.location.origin;
         const profileUrl = isGroup
-          ? ("https://web.thegrapht.su/g/" + dialog.publicId)
+          ? (originUrl + "/g/" + dialog.publicId)
           : (
             isSecretDialog
               ? (username
-                ? ("https://web.thegrapht.su/@" + encodeURIComponent(username) + "/sc?s=" + encodeURIComponent(encodeSecretRouteToken(dialog.publicId || "")))
-                : "https://web.thegrapht.su")
-              : (username ? ("https://web.thegrapht.su/@" + encodeURIComponent(username)) : "https://web.thegrapht.su")
+                ? (originUrl + "/@" + encodeURIComponent(username) + "/sc?s=" + encodeURIComponent(encodeSecretRouteToken(dialog.publicId || "")))
+                : originUrl)
+              : (username ? (originUrl + "/@" + encodeURIComponent(username)) : originUrl)
           );
 
         return {
