@@ -191,7 +191,7 @@ export const callUtils = ({ rtcIceServers }) => `
             +   '<div class="call-screen-overlay-title"></div>'
             +   '<div class="call-screen-overlay-stage" data-overlay-dismiss="true"></div>'
             +   '<div class="call-screen-overlay-hud">'
-            +     '<span class="material-symbols-rounded" aria-hidden="true">screen_share</span>'
+            +     '<span class="lucide" aria-hidden="true">screen_share</span>'
             +     '<span class="call-screen-overlay-owner"></span>'
             +   '</div>'
             + '</div>';

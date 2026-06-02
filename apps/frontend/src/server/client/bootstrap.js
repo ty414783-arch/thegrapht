@@ -765,7 +765,7 @@ export const buildBootstrapClientChunk = ({
         if (query) {
           gifPickerBody.innerHTML =
             '<div class="gif-empty-state">' +
-              '<span class="material-symbols-rounded" aria-hidden="true" style="display: inline-block; animation: spin 1s linear infinite;">autorenew</span>' +
+              '<span class="lucide" aria-hidden="true" style="display: inline-block; animation: spin 1s linear infinite;">autorenew</span>' +
               '<div class="gif-empty-state-text">Поиск в Giphy...</div>' +
             '</div>';
           
@@ -783,7 +783,7 @@ export const buildBootstrapClientChunk = ({
               if (items.length === 0) {
                 gifPickerBody.innerHTML =
                   '<div class="gif-empty-state">' +
-                    '<span class="material-symbols-rounded" aria-hidden="true">gif_box</span>' +
+                    '<span class="lucide" aria-hidden="true">gif_box</span>' +
                     '<div class="gif-empty-state-text">Ничего не найдено</div>' +
                   '</div>';
                 return;
@@ -821,7 +821,7 @@ export const buildBootstrapClientChunk = ({
               console.error("Giphy search failed:", err);
               gifPickerBody.innerHTML =
                 '<div class="gif-empty-state">' +
-                  '<span class="material-symbols-rounded" aria-hidden="true">error</span>' +
+                  '<span class="lucide" aria-hidden="true">error</span>' +
                   '<div class="gif-empty-state-text">Ошибка поиска</div>' +
                 '</div>';
             }
@@ -849,7 +849,7 @@ export const buildBootstrapClientChunk = ({
             '<p class="emoji-picker-title" style="margin-top: 4px; margin-bottom: 10px;">Рекомендуемые</p>' +
             '<div id="giphy-trending-container">' +
               '<div class="gif-empty-state" style="padding: 20px 0;">' +
-                '<span class="material-symbols-rounded" aria-hidden="true" style="display: inline-block; animation: spin 1s linear infinite;">autorenew</span>' +
+                '<span class="lucide" aria-hidden="true" style="display: inline-block; animation: spin 1s linear infinite;">autorenew</span>' +
                 '<div class="gif-empty-state-text">Загрузка рекомендаций...</div>' +
               '</div>' +
             '</div>';
@@ -885,7 +885,7 @@ export const buildBootstrapClientChunk = ({
             if (items.length === 0) {
               trendingContainer.innerHTML =
                 '<div class="gif-empty-state" style="padding: 20px 0;">' +
-                  '<span class="material-symbols-rounded" aria-hidden="true">gif_box</span>' +
+                  '<span class="lucide" aria-hidden="true">gif_box</span>' +
                   '<div class="gif-empty-state-text">Рекомендации недоступны</div>' +
                 '</div>';
               return;
@@ -925,7 +925,7 @@ export const buildBootstrapClientChunk = ({
             if (trendingContainer) {
               trendingContainer.innerHTML =
                 '<div class="gif-empty-state" style="padding: 20px 0;">' +
-                  '<span class="material-symbols-rounded" aria-hidden="true">error</span>' +
+                  '<span class="lucide" aria-hidden="true">error</span>' +
                   '<div class="gif-empty-state-text">Не удалось загрузить рекомендации</div>' +
                 '</div>';
             }

@@ -59,7 +59,7 @@ export const callUi = () => `
           closeCallDevicesPanel();
           syncCallVideoStage();
           if (callExpandButton) {
-            const iconNode = callExpandButton.querySelector(".material-symbols-rounded");
+            const iconNode = callExpandButton.querySelector(".lucide");
             if (iconNode) {
               iconNode.textContent = "open_in_full";
             }
@@ -163,7 +163,7 @@ export const callUi = () => `
                   '<div class="call-group-row-state">' + escapeHtml(rowState) + '</div>' +
                 '</div>' +
               '</div>' +
-              '<span class="material-symbols-rounded call-group-row-mic' + (participant?.isMuted ? " muted" : " active") + '" aria-hidden="true">' + (participant?.isMuted ? "mic_off" : "mic") + '</span>' +
+              '<span class="lucide call-group-row-mic' + (participant?.isMuted ? " muted" : " active") + '" aria-hidden="true">' + (participant?.isMuted ? "mic_off" : "mic") + '</span>' +
             '</div>';
           });
           callGroupList.innerHTML = rows.join("");
@@ -173,14 +173,14 @@ export const callUi = () => `
         callMiniName.textContent = activeCall.peerName || "TheGraphT";
         callMiniSubtitle.textContent = statusText;
         callMuteButton.classList.toggle("muted", Boolean(activeCall.isMuted));
-        const muteIconNode = callMuteButton.querySelector(".material-symbols-rounded");
+        const muteIconNode = callMuteButton.querySelector(".lucide");
         if (muteIconNode) {
           muteIconNode.textContent = activeCall.isMuted ? "mic_off" : "mic";
         }
         if (callVideoButton) {
           callVideoButton.classList.toggle("active", Boolean(activeCall.cameraEnabled));
           callVideoButton.classList.toggle("muted", !Boolean(activeCall.cameraEnabled));
-          const videoIconNode = callVideoButton.querySelector(".material-symbols-rounded");
+          const videoIconNode = callVideoButton.querySelector(".lucide");
           if (videoIconNode) {
             videoIconNode.textContent = activeCall.cameraEnabled ? "videocam" : "videocam_off";
           }
@@ -200,7 +200,7 @@ export const callUi = () => `
               ? "The other user is already sharing screen"
               : "Screen"
           );
-          const screenIconNode = callScreenButton.querySelector(".material-symbols-rounded");
+          const screenIconNode = callScreenButton.querySelector(".lucide");
           if (screenIconNode) {
             screenIconNode.textContent = activeCall.screenEnabled ? "stop_screen_share" : "screen_share";
           }
@@ -392,7 +392,7 @@ export const callUi = () => `
           '</div>' +
           '<div class="participant-name call-participant-meta">' +
             '<span class="call-participant-name">' + escapeHtml(name || "Guest") + '</span>' +
-            '<span class="material-symbols-rounded participant-mic call-participant-mic' + (muted ? " muted" : "") + '" aria-hidden="true">' + (muted ? "mic_off" : "mic") + '</span>' +
+            '<span class="lucide participant-mic call-participant-mic' + (muted ? " muted" : "") + '" aria-hidden="true">' + (muted ? "mic_off" : "mic") + '</span>' +
           '</div>' +
         '</div>'
       );

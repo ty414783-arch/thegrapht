@@ -19,7 +19,7 @@ export const audioPlayer = () => `
         ".header-action-btn",
         ".composer button",
         ".composer [role='button']",
-        ".composer .material-symbols-rounded",
+        ".composer .lucide",
         "button"
       ].join(", ");
 

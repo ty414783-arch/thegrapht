@@ -190,7 +190,7 @@ const renderParticipantCard = (participant) => {
     name.className = "call-participant-name";
 
     const mic = document.createElement("span");
-    mic.className = "material-symbols-rounded participant-mic call-participant-mic";
+    mic.className = "lucide participant-mic call-participant-mic";
     mic.setAttribute("aria-hidden", "true");
 
     badge.append(name, mic);

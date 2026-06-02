@@ -760,7 +760,7 @@
         if (query) {
           gifPickerBody.innerHTML =
             '<div class="gif-empty-state">' +
-              '<span class="material-symbols-rounded" aria-hidden="true" style="display: inline-block; animation: spin 1s linear infinite;">autorenew</span>' +
+              '<span class="lucide" aria-hidden="true" style="display: inline-block; animation: spin 1s linear infinite;">autorenew</span>' +
               '<div class="gif-empty-state-text">Поиск в Giphy...</div>' +
             '</div>';
           
@@ -778,7 +778,7 @@
               if (items.length === 0) {
                 gifPickerBody.innerHTML =
                   '<div class="gif-empty-state">' +
-                    '<span class="material-symbols-rounded" aria-hidden="true">gif_box</span>' +
+                    '<span class="lucide" aria-hidden="true">gif_box</span>' +
                     '<div class="gif-empty-state-text">Ничего не найдено</div>' +
                   '</div>';
                 return;
@@ -816,7 +816,7 @@
               console.error("Giphy search failed:", err);
               gifPickerBody.innerHTML =
                 '<div class="gif-empty-state">' +
-                  '<span class="material-symbols-rounded" aria-hidden="true">error</span>' +
+                  '<span class="lucide" aria-hidden="true">error</span>' +
                   '<div class="gif-empty-state-text">Ошибка поиска</div>' +
                 '</div>';
             }
@@ -844,7 +844,7 @@
             '<p class="emoji-picker-title" style="margin-top: 4px; margin-bottom: 10px;">Рекомендуемые</p>' +
             '<div id="giphy-trending-container">' +
               '<div class="gif-empty-state" style="padding: 20px 0;">' +
-                '<span class="material-symbols-rounded" aria-hidden="true" style="display: inline-block; animation: spin 1s linear infinite;">autorenew</span>' +
+                '<span class="lucide" aria-hidden="true" style="display: inline-block; animation: spin 1s linear infinite;">autorenew</span>' +
                 '<div class="gif-empty-state-text">Загрузка рекомендаций...</div>' +
               '</div>' +
             '</div>';
@@ -880,7 +880,7 @@
             if (items.length === 0) {
               trendingContainer.innerHTML =
                 '<div class="gif-empty-state" style="padding: 20px 0;">' +
-                  '<span class="material-symbols-rounded" aria-hidden="true">gif_box</span>' +
+                  '<span class="lucide" aria-hidden="true">gif_box</span>' +
                   '<div class="gif-empty-state-text">Рекомендации недоступны</div>' +
                 '</div>';
               return;
@@ -920,7 +920,7 @@
             if (trendingContainer) {
               trendingContainer.innerHTML =
                 '<div class="gif-empty-state" style="padding: 20px 0;">' +
-                  '<span class="material-symbols-rounded" aria-hidden="true">error</span>' +
+                  '<span class="lucide" aria-hidden="true">error</span>' +
                   '<div class="gif-empty-state-text">Не удалось загрузить рекомендации</div>' +
                 '</div>';
             }
@@ -2779,7 +2779,7 @@
             +   '<div class="call-screen-overlay-title"></div>'
             +   '<div class="call-screen-overlay-stage" data-overlay-dismiss="true"></div>'
             +   '<div class="call-screen-overlay-hud">'
-            +     '<span class="material-symbols-rounded" aria-hidden="true">screen_share</span>'
+            +     '<span class="lucide" aria-hidden="true">screen_share</span>'
             +     '<span class="call-screen-overlay-owner"></span>'
             +   '</div>'
             + '</div>';
@@ -4080,7 +4080,7 @@
           closeCallDevicesPanel();
           syncCallVideoStage();
           if (callExpandButton) {
-            const iconNode = callExpandButton.querySelector(".material-symbols-rounded");
+            const iconNode = callExpandButton.querySelector(".lucide");
             if (iconNode) {
               iconNode.textContent = "open_in_full";
             }
@@ -4184,7 +4184,7 @@
                   '<div class="call-group-row-state">' + escapeHtml(rowState) + '</div>' +
                 '</div>' +
               '</div>' +
-              '<span class="material-symbols-rounded call-group-row-mic' + (participant?.isMuted ? " muted" : " active") + '" aria-hidden="true">' + (participant?.isMuted ? "mic_off" : "mic") + '</span>' +
+              '<span class="lucide call-group-row-mic' + (participant?.isMuted ? " muted" : " active") + '" aria-hidden="true">' + (participant?.isMuted ? "mic_off" : "mic") + '</span>' +
             '</div>';
           });
           callGroupList.innerHTML = rows.join("");
@@ -4194,14 +4194,14 @@
         callMiniName.textContent = activeCall.peerName || "TheGraphT";
         callMiniSubtitle.textContent = statusText;
         callMuteButton.classList.toggle("muted", Boolean(activeCall.isMuted));
-        const muteIconNode = callMuteButton.querySelector(".material-symbols-rounded");
+        const muteIconNode = callMuteButton.querySelector(".lucide");
         if (muteIconNode) {
           muteIconNode.textContent = activeCall.isMuted ? "mic_off" : "mic";
         }
         if (callVideoButton) {
           callVideoButton.classList.toggle("active", Boolean(activeCall.cameraEnabled));
           callVideoButton.classList.toggle("muted", !Boolean(activeCall.cameraEnabled));
-          const videoIconNode = callVideoButton.querySelector(".material-symbols-rounded");
+          const videoIconNode = callVideoButton.querySelector(".lucide");
           if (videoIconNode) {
             videoIconNode.textContent = activeCall.cameraEnabled ? "videocam" : "videocam_off";
           }
@@ -4221,7 +4221,7 @@
               ? "The other user is already sharing screen"
               : "Screen"
           );
-          const screenIconNode = callScreenButton.querySelector(".material-symbols-rounded");
+          const screenIconNode = callScreenButton.querySelector(".lucide");
           if (screenIconNode) {
             screenIconNode.textContent = activeCall.screenEnabled ? "stop_screen_share" : "screen_share";
           }
@@ -4413,7 +4413,7 @@
           '</div>' +
           '<div class="participant-name call-participant-meta">' +
             '<span class="call-participant-name">' + escapeHtml(name || "Guest") + '</span>' +
-            '<span class="material-symbols-rounded participant-mic call-participant-mic' + (muted ? " muted" : "") + '" aria-hidden="true">' + (muted ? "mic_off" : "mic") + '</span>' +
+            '<span class="lucide participant-mic call-participant-mic' + (muted ? " muted" : "") + '" aria-hidden="true">' + (muted ? "mic_off" : "mic") + '</span>' +
           '</div>' +
         '</div>'
       );
@@ -9228,7 +9228,7 @@
         );
         const secretBadgeTitle = "Secret chat. End-to-end encrypted.";
         const secretBadgeMarkup = (showSecretBadge && isSecretDirect)
-          ? '<span class="dialog-avatar-secret" title="' + escapeHtml(secretBadgeTitle) + '" aria-label="' + escapeHtml(secretBadgeTitle) + '"><span class="material-symbols-rounded">lock</span></span>'
+          ? '<span class="dialog-avatar-secret" title="' + escapeHtml(secretBadgeTitle) + '" aria-label="' + escapeHtml(secretBadgeTitle) + '"><span class="lucide">lock</span></span>'
           : "";
 
         if (dialog.type === "direct" || dialog.type === "group") {
@@ -9653,7 +9653,7 @@
 
         profileLinkContextMenuBody.innerHTML =
           '<button class="dialog-context-menu-item" type="button" data-action="copy-username-link">' +
-            '<span class="material-symbols-rounded" aria-hidden="true">content_copy</span>' +
+            '<span class="lucide" aria-hidden="true">content_copy</span>' +
             '<span>Copy Username</span>' +
           '</button>';
         profileLinkContextMenuState = { profileUrl: String(profileUrl) };
@@ -9761,7 +9761,7 @@
 
         groupMemberContextMenuBody.innerHTML =
           '<button class="dialog-context-menu-item" type="button" data-action="send-message">' +
-            '<span class="material-symbols-rounded" aria-hidden="true">chat</span>' +
+            '<span class="lucide" aria-hidden="true">chat</span>' +
             '<span>Send Message</span>' +
           '</button>';
         groupMemberContextMenuState = { userId };
@@ -10267,7 +10267,7 @@
         return renderReplyPreviewHtml(message) + '<div class="message-audio-wrap">' +
           '<div class="tg-audio-message message-audio-card' + (isActiveTrack ? " is-playing" : "") + '" data-audio-card data-message-id="' + escapeHtml(message.id) + '" data-audio-duration="' + escapeHtml(String(durationSeconds)) + '" data-audio-size="' + escapeHtml(String(sizeBytes)) + '" title="' + escapeHtml(displayName) + '">' +
             '<button class="tg-audio-play message-audio-toggle" type="button" data-audio-toggle aria-label="Play audio">' +
-              '<span class="tg-audio-icon material-symbols-rounded message-audio-toggle-icon" aria-hidden="true">' + toggleIcon + '</span>' +
+              '<span class="tg-audio-icon lucide message-audio-toggle-icon" aria-hidden="true">' + toggleIcon + '</span>' +
             '</button>' +
             '<div class="tg-audio-content message-audio-main">' +
               '<div class="tg-audio-title message-audio-name" title="' + escapeHtml(displayName) + '">' + escapeHtml(displayName) + '</div>' +
@@ -10319,7 +10319,7 @@
 
         if (callSummary) {
           return '<div class="message-call-card ' + callSummary.tone + '">' +
-            '<span class="material-symbols-rounded message-call-icon" aria-hidden="true">' + escapeHtml(callSummary.icon) + '</span>' +
+            '<span class="lucide message-call-icon" aria-hidden="true">' + escapeHtml(callSummary.icon) + '</span>' +
             '<div class="message-call-copy">' +
               '<div class="message-call-title">' + escapeHtml(callSummary.title) + '</div>' +
               '<div class="message-call-subtitle">' + escapeHtml(callSummary.subtitle) + '</div>' +
@@ -11033,7 +11033,7 @@
         ".header-action-btn",
         ".composer button",
         ".composer [role='button']",
-        ".composer .material-symbols-rounded",
+        ".composer .lucide",
         "button"
       ].join(", ");
 
@@ -12359,7 +12359,7 @@
         }
         const nextExpanded = !callModal.classList.contains("expanded");
         callModal.classList.toggle("expanded", nextExpanded);
-        const iconNode = callExpandButton.querySelector(".material-symbols-rounded");
+        const iconNode = callExpandButton.querySelector(".lucide");
         if (iconNode) {
           iconNode.textContent = nextExpanded ? "close_fullscreen" : "open_in_full";
         }
@@ -12378,7 +12378,7 @@
       });
       groupCallBanner?.addEventListener("click", (event) => {
         const target = event.target instanceof Element ? event.target : null;
-        const endIconPressed = Boolean(target?.closest(".material-symbols-rounded"));
+        const endIconPressed = Boolean(target?.closest(".lucide"));
         if (endIconPressed && activeCall?.mode === "group") {
           event.preventDefault();
           event.stopPropagation();
@@ -12595,7 +12595,7 @@
           if (isCallExpanded && callModal instanceof HTMLElement) {
             callModal.classList.remove("expanded");
             if (callExpandButton instanceof HTMLElement) {
-              const iconNode = callExpandButton.querySelector(".material-symbols-rounded");
+              const iconNode = callExpandButton.querySelector(".lucide");
               if (iconNode) {
                 iconNode.textContent = "open_in_full";
               }
@@ -13345,7 +13345,7 @@
             ? "Secret chat already exists"
             : (formatDialogSubtitle(dialog) || "last seen recently");
           return '<button class="group-create-item' + (isSelected ? " selected" : "") + (isUnavailable ? " unavailable" : "") + '" type="button" data-group-dialog-id="' + escapeHtml(dialogId) + '" ' + (isUnavailable ? 'disabled aria-disabled="true"' : "") + '>' +
-            '<span class="group-create-check"><span class="material-symbols-rounded" aria-hidden="true">check</span></span>' +
+            '<span class="group-create-check"><span class="lucide" aria-hidden="true">check</span></span>' +
             getDialogAvatarMarkup(dialog) +
             '<div class="group-create-body">' +
               '<p class="group-create-name">' + escapeHtml(dialog.title || "User") + '</p>' +
@@ -13635,7 +13635,7 @@
           return '<button class="dialog-item saved-item' + active + '" data-dialog-id="' + escapeHtml(dialog.id) + '" data-public-id="' + escapeHtml(dialog.publicId) + '">' +
             getDialogAvatarMarkup(dialog) +
             '<div class="dialog-body">' +
-              '<div class="dialog-line"><span class="dialog-title-wrap"><strong>' + escapeHtml(dialog.title) + '</strong>' + (dialog.muted ? '<span class="material-symbols-rounded" style="font-size: 14px; margin-left: 4px; vertical-align: middle; opacity: 0.6;">volume_off</span>' : '') + '</span><span class="dialog-meta">' + escapeHtml(formatDialogListTime(dialog.lastMessageCreatedAt)) + '</span></div>' +
+              '<div class="dialog-line"><span class="dialog-title-wrap"><strong>' + escapeHtml(dialog.title) + '</strong>' + (dialog.muted ? '<span class="lucide" style="font-size: 14px; margin-left: 4px; vertical-align: middle; opacity: 0.6;">volume_off</span>' : '') + '</span><span class="dialog-meta">' + escapeHtml(formatDialogListTime(dialog.lastMessageCreatedAt)) + '</span></div>' +
               '<div class="dialog-preview dialog-preview-row">' +
                 '<span class="dialog-preview-copy">' + renderDialogPreviewHtml(dialog) + '</span>' +
                 '<span class="' + unreadBadgeClassName + '" aria-hidden="' + (unreadCount > 0 ? "false" : "true") + '">' + escapeHtml(unreadBadgeText) + '</span>' +
@@ -13706,7 +13706,7 @@
         dialogContextMenuState = context;
         dialogContextMenuBody.innerHTML =
           '<button class="dialog-context-menu-item" type="button" data-action="open_in_new">' +
-            '<span class="material-symbols-rounded" aria-hidden="true">open_in_new</span>' +
+            '<span class="lucide" aria-hidden="true">open_in_new</span>' +
             '<span>Open chat in new window</span>' +
           '</button>';
 
@@ -16239,7 +16239,7 @@
           activeAiController = null;
           if (sidebarAiSend) {
             sidebarAiSend.classList.remove("is-streaming");
-            sidebarAiSend.innerHTML = '<span class="material-symbols-rounded" aria-hidden="true">arrow_upward</span>';
+            sidebarAiSend.innerHTML = '<span class="lucide" aria-hidden="true">arrow_upward</span>';
           }
           
           // Append italicized stopped label
@@ -16423,7 +16423,7 @@
               streamBubble.classList.remove("is-generating");
               if (sidebarAiSend) {
                 sidebarAiSend.classList.remove("is-streaming");
-                sidebarAiSend.innerHTML = '<span class="material-symbols-rounded" aria-hidden="true">arrow_upward</span>';
+                sidebarAiSend.innerHTML = '<span class="lucide" aria-hidden="true">arrow_upward</span>';
               }
             }
             return;
@@ -16530,7 +16530,7 @@
           streamBubble.classList.remove("is-generating");
           if (sidebarAiSend) {
             sidebarAiSend.classList.remove("is-streaming");
-            sidebarAiSend.innerHTML = '<span class="material-symbols-rounded" aria-hidden="true">arrow_upward</span>';
+            sidebarAiSend.innerHTML = '<span class="lucide" aria-hidden="true">arrow_upward</span>';
           }
         }
       };
@@ -16674,7 +16674,7 @@
             proAlert.style.gap = "8px";
             proAlert.style.transition = "all 0.3s ease";
             
-            proAlert.innerHTML = '<div style="display:flex; align-items:center; gap:8px; font-weight:700; color:#fff;"><span class="material-symbols-rounded" style="color:#a5b4fc; font-size:18px;">lock</span>TheGraphT Chat Pro</div><div style="font-size:13px; opacity:0.9; line-height:1.4;">Интеллектуальная модель станет доступна <strong>15 июня</strong>! Мы готовим для вас самое мощное ИИ-обновление.</div>';
+            proAlert.innerHTML = '<div style="display:flex; align-items:center; gap:8px; font-weight:700; color:#fff;"><span class="lucide" style="color:#a5b4fc; font-size:18px;">lock</span>TheGraphT Chat Pro</div><div style="font-size:13px; opacity:0.9; line-height:1.4;">Интеллектуальная модель станет доступна <strong>15 июня</strong>! Мы готовим для вас самое мощное ИИ-обновление.</div>';
             document.body.appendChild(proAlert);
             setTimeout(() => {
               proAlert.style.opacity = "0";
@@ -16877,7 +16877,7 @@
           {
             key: "reply",
             label: "Reply",
-            icon: '<span class="material-symbols-rounded" aria-hidden="true">reply</span>'
+            icon: '<span class="lucide" aria-hidden="true">reply</span>'
           }
         ];
 
@@ -16885,7 +16885,7 @@
           actions.push({
             key: "download",
             label: "Download",
-            icon: '<span class="material-symbols-rounded" aria-hidden="true">download</span>'
+            icon: '<span class="lucide" aria-hidden="true">download</span>'
           });
         }
 
@@ -16893,7 +16893,7 @@
           actions.push({
             key: "delete",
             label: "Delete",
-            icon: '<span class="material-symbols-rounded" aria-hidden="true">delete</span>',
+            icon: '<span class="lucide" aria-hidden="true">delete</span>',
             danger: true
           });
         }

@@ -323,7 +323,7 @@ export const sidebarClientChunk = `      const setStatus = (message, type) => {
             ? "Secret chat already exists"
             : (formatDialogSubtitle(dialog) || "last seen recently");
           return '<button class="group-create-item' + (isSelected ? " selected" : "") + (isUnavailable ? " unavailable" : "") + '" type="button" data-group-dialog-id="' + escapeHtml(dialogId) + '" ' + (isUnavailable ? 'disabled aria-disabled="true"' : "") + '>' +
-            '<span class="group-create-check"><span class="material-symbols-rounded" aria-hidden="true">check</span></span>' +
+            '<span class="group-create-check"><span class="lucide" aria-hidden="true">check</span></span>' +
             getDialogAvatarMarkup(dialog) +
             '<div class="group-create-body">' +
               '<p class="group-create-name">' + escapeHtml(dialog.title || "User") + '</p>' +
@@ -613,7 +613,7 @@ export const sidebarClientChunk = `      const setStatus = (message, type) => {
           return '<button class="dialog-item saved-item' + active + '" data-dialog-id="' + escapeHtml(dialog.id) + '" data-public-id="' + escapeHtml(dialog.publicId) + '">' +
             getDialogAvatarMarkup(dialog) +
             '<div class="dialog-body">' +
-              '<div class="dialog-line"><span class="dialog-title-wrap"><strong>' + escapeHtml(dialog.title) + '</strong>' + (dialog.muted ? '<span class="material-symbols-rounded" style="font-size: 14px; margin-left: 4px; vertical-align: middle; opacity: 0.6;">volume_off</span>' : '') + '</span><span class="dialog-meta">' + escapeHtml(formatDialogListTime(dialog.lastMessageCreatedAt)) + '</span></div>' +
+              '<div class="dialog-line"><span class="dialog-title-wrap"><strong>' + escapeHtml(dialog.title) + '</strong>' + (dialog.muted ? '<span class="lucide" style="font-size: 14px; margin-left: 4px; vertical-align: middle; opacity: 0.6;">volume_off</span>' : '') + '</span><span class="dialog-meta">' + escapeHtml(formatDialogListTime(dialog.lastMessageCreatedAt)) + '</span></div>' +
               '<div class="dialog-preview dialog-preview-row">' +
                 '<span class="dialog-preview-copy">' + renderDialogPreviewHtml(dialog) + '</span>' +
                 '<span class="' + unreadBadgeClassName + '" aria-hidden="' + (unreadCount > 0 ? "false" : "true") + '">' + escapeHtml(unreadBadgeText) + '</span>' +
@@ -684,7 +684,7 @@ export const sidebarClientChunk = `      const setStatus = (message, type) => {
         dialogContextMenuState = context;
         dialogContextMenuBody.innerHTML =
           '<button class="dialog-context-menu-item" type="button" data-action="open_in_new">' +
-            '<span class="material-symbols-rounded" aria-hidden="true">open_in_new</span>' +
+            '<span class="lucide" aria-hidden="true">open_in_new</span>' +
             '<span>Open chat in new window</span>' +
           '</button>';
 
@@ -3225,7 +3225,7 @@ export const sidebarClientChunk = `      const setStatus = (message, type) => {
           activeAiController = null;
           if (sidebarAiSend) {
             sidebarAiSend.classList.remove("is-streaming");
-            sidebarAiSend.innerHTML = '<span class="material-symbols-rounded" aria-hidden="true">arrow_upward</span>';
+            sidebarAiSend.innerHTML = '<span class="lucide" aria-hidden="true">arrow_upward</span>';
           }
           
           // Append italicized stopped label
@@ -3409,7 +3409,7 @@ export const sidebarClientChunk = `      const setStatus = (message, type) => {
               streamBubble.classList.remove("is-generating");
               if (sidebarAiSend) {
                 sidebarAiSend.classList.remove("is-streaming");
-                sidebarAiSend.innerHTML = '<span class="material-symbols-rounded" aria-hidden="true">arrow_upward</span>';
+                sidebarAiSend.innerHTML = '<span class="lucide" aria-hidden="true">arrow_upward</span>';
               }
             }
             return;
@@ -3516,7 +3516,7 @@ export const sidebarClientChunk = `      const setStatus = (message, type) => {
           streamBubble.classList.remove("is-generating");
           if (sidebarAiSend) {
             sidebarAiSend.classList.remove("is-streaming");
-            sidebarAiSend.innerHTML = '<span class="material-symbols-rounded" aria-hidden="true">arrow_upward</span>';
+            sidebarAiSend.innerHTML = '<span class="lucide" aria-hidden="true">arrow_upward</span>';
           }
         }
       };
@@ -3660,7 +3660,7 @@ export const sidebarClientChunk = `      const setStatus = (message, type) => {
             proAlert.style.gap = "8px";
             proAlert.style.transition = "all 0.3s ease";
             
-            proAlert.innerHTML = '<div style="display:flex; align-items:center; gap:8px; font-weight:700; color:#fff;"><span class="material-symbols-rounded" style="color:#a5b4fc; font-size:18px;">lock</span>TheGraphT Chat Pro</div><div style="font-size:13px; opacity:0.9; line-height:1.4;">Интеллектуальная модель станет доступна <strong>15 июня</strong>! Мы готовим для вас самое мощное ИИ-обновление.</div>';
+            proAlert.innerHTML = '<div style="display:flex; align-items:center; gap:8px; font-weight:700; color:#fff;"><span class="lucide" style="color:#a5b4fc; font-size:18px;">lock</span>TheGraphT Chat Pro</div><div style="font-size:13px; opacity:0.9; line-height:1.4;">Интеллектуальная модель станет доступна <strong>15 июня</strong>! Мы готовим для вас самое мощное ИИ-обновление.</div>';
             document.body.appendChild(proAlert);
             setTimeout(() => {
               proAlert.style.opacity = "0";

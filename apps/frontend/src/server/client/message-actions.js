@@ -180,7 +180,7 @@ export const messageActionsClientChunk = `      const messageHighlightTimers = n
           {
             key: "reply",
             label: "Reply",
-            icon: '<span class="material-symbols-rounded" aria-hidden="true">reply</span>'
+            icon: '<span class="lucide" aria-hidden="true">reply</span>'
           }
         ];
 
@@ -188,7 +188,7 @@ export const messageActionsClientChunk = `      const messageHighlightTimers = n
           actions.push({
             key: "download",
             label: "Download",
-            icon: '<span class="material-symbols-rounded" aria-hidden="true">download</span>'
+            icon: '<span class="lucide" aria-hidden="true">download</span>'
           });
         }
 
@@ -196,7 +196,7 @@ export const messageActionsClientChunk = `      const messageHighlightTimers = n
           actions.push({
             key: "delete",
             label: "Delete",
-            icon: '<span class="material-symbols-rounded" aria-hidden="true">delete</span>',
+            icon: '<span class="lucide" aria-hidden="true">delete</span>',
             danger: true
           });
         }

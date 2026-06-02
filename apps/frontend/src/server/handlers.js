@@ -95,14 +95,8 @@ export const createRequestHandler = ({
   inter700Buffer,
   inter800Url,
   inter800Buffer,
-  materialSymbolsRounded400Url,
-  materialSymbolsRounded400Buffer,
-  materialSymbolsRounded500Url,
-  materialSymbolsRounded500Buffer,
-  materialSymbolsRounded600Url,
-  materialSymbolsRounded600Buffer,
-  materialSymbolsRounded700Url,
-  materialSymbolsRounded700Buffer,
+  lucideUrl,
+  lucideBuffer,
   logoUrl,
   logoBuffer,
   emojiIconUrl,
@@ -397,10 +391,7 @@ export const createRequestHandler = ({
     [inter600Url, inter600Buffer],
     [inter700Url, inter700Buffer],
     [inter800Url, inter800Buffer],
-    [materialSymbolsRounded400Url, materialSymbolsRounded400Buffer],
-    [materialSymbolsRounded500Url, materialSymbolsRounded500Buffer],
-    [materialSymbolsRounded600Url, materialSymbolsRounded600Buffer],
-    [materialSymbolsRounded700Url, materialSymbolsRounded700Buffer]
+    [lucideUrl, lucideBuffer]
   ]);
 
   if (fontResponses.has(request.url)) {

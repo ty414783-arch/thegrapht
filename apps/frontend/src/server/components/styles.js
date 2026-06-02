@@ -6,10 +6,8 @@ export const buildStyles = ({
   inter600Url,
   inter700Url,
   inter800Url,
-  materialSymbolsRounded400Url,
-  materialSymbolsRounded500Url,
-  materialSymbolsRounded600Url,
-  materialSymbolsRounded700Url,
+  lucideUrl,
+  lucideCss,
   wallpaperDataUrl
 }) => `
 <style>
@@ -49,32 +47,11 @@ export const buildStyles = ({
         src: url("${inter800Url}") format("truetype");
       }
       @font-face {
-        font-family: "Material Symbols Rounded";
+        font-family: "lucide";
         font-style: normal;
-        font-weight: 400;
+        font-weight: normal;
         font-display: block;
-        src: url("${materialSymbolsRounded400Url}") format("truetype");
-      }
-      @font-face {
-        font-family: "Material Symbols Rounded";
-        font-style: normal;
-        font-weight: 500;
-        font-display: block;
-        src: url("${materialSymbolsRounded500Url}") format("truetype");
-      }
-      @font-face {
-        font-family: "Material Symbols Rounded";
-        font-style: normal;
-        font-weight: 600;
-        font-display: block;
-        src: url("${materialSymbolsRounded600Url}") format("truetype");
-      }
-      @font-face {
-        font-family: "Material Symbols Rounded";
-        font-style: normal;
-        font-weight: 700;
-        font-display: block;
-        src: url("${materialSymbolsRounded700Url}") format("truetype");
+        src: url("${lucideUrl}") format("truetype");
       }
       :root {
         color: #eef2fb;
@@ -87,29 +64,33 @@ export const buildStyles = ({
         --m3-tertiary: #efb8c8;
         --m3-surface: #14171f;
       }
-      .material-symbols-rounded {
-        font-family: "Material Symbols Rounded";
-        font-weight: 500;
+      .lucide,
+      .lucide,
+      [class^="icon-"],
+      [class*=" icon-"] {
+        font-family: "lucide" !important;
         font-style: normal;
-        font-size: 22px;
-        line-height: 1;
-        letter-spacing: 0;
+        font-weight: normal;
+        font-variant: normal;
         text-transform: none;
+        line-height: 1;
         display: inline-flex;
         align-items: center;
         justify-content: center;
         white-space: nowrap;
         word-wrap: normal;
         direction: ltr;
-        -webkit-font-feature-settings: "liga";
         -webkit-font-smoothing: antialiased;
-        font-variation-settings: "FILL" 0, "wght" 520, "GRAD" 0, "opsz" 24;
+        -moz-osx-font-smoothing: grayscale;
+        font-size: 22px;
         pointer-events: none;
         user-select: none;
       }
-      body:not(.fonts-loaded) .material-symbols-rounded {
+      body:not(.fonts-loaded) .lucide,
+      body:not(.fonts-loaded) .lucide {
         color: transparent !important;
       }
+      ${lucideCss}
       .page.ui-inter-font {
         font-family: "Inter", "Segoe UI", sans-serif;
       }
@@ -848,7 +829,7 @@ export const buildStyles = ({
       .workspace-brand-menu:active {
         transform: scale(0.96);
       }
-      .workspace-brand-menu .material-symbols-rounded {
+      .workspace-brand-menu .lucide {
         font-size: 23px;
       }
       .workspace-brand h1 {
@@ -907,7 +888,7 @@ export const buildStyles = ({
       .sidebar-glass-menu-item:active {
         transform: scale(0.98);
       }
-      .sidebar-glass-menu-item .material-symbols-rounded {
+      .sidebar-glass-menu-item .lucide {
         font-size: 20px;
       }
       .sidebar-glass-menu-sep {
@@ -981,7 +962,7 @@ export const buildStyles = ({
       .sidebar-compose-menu-item.is-disabled:hover {
         background: transparent;
       }
-      .sidebar-compose-menu-item .material-symbols-rounded {
+      .sidebar-compose-menu-item .lucide {
         font-size: 20px;
       }
       .group-create-panel {
@@ -1181,7 +1162,7 @@ export const buildStyles = ({
       .group-create-item.unavailable:hover {
         background: rgba(255,255,255,0.02);
       }
-      .group-create-check .material-symbols-rounded {
+      .group-create-check .lucide {
         font-size: 16px;
       }
       .group-create-body {
@@ -1234,7 +1215,7 @@ export const buildStyles = ({
         transition: opacity 0.18s ease, transform 0.18s ease;
         z-index: 40;
       }
-      .group-create-next .material-symbols-rounded {
+      .group-create-next .lucide {
         font-size: 28px;
       }
       .workspace-sidebar.group-create-next-enabled .group-create-next {
@@ -1264,7 +1245,7 @@ export const buildStyles = ({
         position: relative;
         overflow: hidden;
       }
-      .group-create-photo-button .material-symbols-rounded {
+      .group-create-photo-button .lucide {
         font-size: 42px;
       }
       .group-create-photo-preview {
@@ -1278,7 +1259,7 @@ export const buildStyles = ({
       .group-create-photo-button.has-photo .group-create-photo-preview {
         display: block;
       }
-      .group-create-photo-button.has-photo .material-symbols-rounded {
+      .group-create-photo-button.has-photo .lucide {
         display: none;
       }
       .group-create-name-label {
@@ -1443,7 +1424,7 @@ export const buildStyles = ({
         outline: none !important;
         -webkit-tap-highlight-color: transparent;
       }
-      .sidebar-ai-button .material-symbols-rounded {
+      .sidebar-ai-button .lucide {
         font-size: 24px;
         transition: transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
       }
@@ -1452,7 +1433,7 @@ export const buildStyles = ({
         box-shadow: 0 12px 30px rgba(236, 72, 153, 0.5), inset 0 1px 0 rgba(255, 255, 255, 0.4);
         background: linear-gradient(135deg, #6366f1 0%, #db2777 50%, #e11d48 100%);
       }
-      .sidebar-ai-button:hover .material-symbols-rounded {
+      .sidebar-ai-button:hover .lucide {
         transform: rotate(20deg) scale(1.1);
       }
       .sidebar-ai-button:active {
@@ -1751,7 +1732,7 @@ export const buildStyles = ({
         pointer-events: auto;
         cursor: help;
       }
-      .dialog-avatar-secret .material-symbols-rounded {
+      .dialog-avatar-secret .lucide {
         font-size: 15px;
         line-height: 1;
         color: #e5edf9;
@@ -2050,7 +2031,7 @@ export const buildStyles = ({
         right: -4px;
         bottom: -4px;
       }
-      .chat-header-avatar .dialog-avatar-secret .material-symbols-rounded {
+      .chat-header-avatar .dialog-avatar-secret .lucide {
         font-size: 15px;
       }
       .chat-island-text {
@@ -2159,14 +2140,14 @@ export const buildStyles = ({
         cursor: pointer;
         transition: background 0.16s ease, color 0.16s ease, opacity 0.16s ease, transform 0.16s ease;
       }
-      .chat-island-action .material-symbols-rounded,
-      .chat-search-close .material-symbols-rounded,
-      .chat-profile-panel-close .material-symbols-rounded,
-      .chat-scroll-bottom .material-symbols-rounded,
-      .attach-menu-item .material-symbols-rounded {
+      .chat-island-action .lucide,
+      .chat-search-close .lucide,
+      .chat-profile-panel-close .lucide,
+      .chat-scroll-bottom .lucide,
+      .attach-menu-item .lucide {
         color: currentColor;
       }
-      .chat-island-action .material-symbols-rounded {
+      .chat-island-action .lucide {
         font-size: 28px;
         font-variation-settings: "FILL" 0, "wght" 560, "GRAD" 0, "opsz" 28;
       }
@@ -2325,7 +2306,7 @@ export const buildStyles = ({
       .chat-profile-avatar .dialog-avatar svg { width: 48px; height: 48px; }
       .chat-profile-avatar .dialog-avatar-presence { width: 20px; height: 20px; left: 6px; bottom: 6px; border-width: 3px; }
       .chat-profile-avatar .dialog-avatar-secret { right: 7px; bottom: 7px; }
-      .chat-profile-avatar .dialog-avatar-secret .material-symbols-rounded { font-size: 21px; }
+      .chat-profile-avatar .dialog-avatar-secret .lucide { font-size: 21px; }
       .chat-profile-name {
         margin-top: 20px;
         font-size: 36px;
@@ -2564,7 +2545,7 @@ export const buildStyles = ({
       .chat-search-close:active {
         transform: scale(0.9);
       }
-      .chat-search-close .material-symbols-rounded {
+      .chat-search-close .lucide {
         font-size: 20px;
       }
       .chat-search-close svg {
@@ -2853,7 +2834,7 @@ export const buildStyles = ({
         overflow: hidden;
         text-overflow: ellipsis;
       }
-      .group-call-banner .material-symbols-rounded {
+      .group-call-banner .lucide {
         font-size: 20px;
         color: rgba(255,255,255,0.85);
       }
@@ -2995,7 +2976,7 @@ export const buildStyles = ({
         background: rgba(255,255,255,0.06);
         color: #e5ebf7;
       }
-      .chat-audio-top-btn .material-symbols-rounded {
+      .chat-audio-top-btn .lucide {
         font-size: 18px;
         font-variation-settings: "FILL" 1, "wght" 520, "GRAD" 0, "opsz" 20;
       }
@@ -3249,8 +3230,8 @@ export const buildStyles = ({
         stroke-linecap: round;
         stroke-linejoin: round;
       }
-      .call-icon-button .material-symbols-rounded,
-      .call-action-button .material-symbols-rounded {
+      .call-icon-button .lucide,
+      .call-action-button .lucide {
         font-size: 22px;
         line-height: 1;
         font-variation-settings: "FILL" 0, "wght" 500, "GRAD" 0, "opsz" 24;
@@ -3545,7 +3526,7 @@ export const buildStyles = ({
         background: #ffffff;
         color: #1f2633;
       }
-      .call-action-button.muted .material-symbols-rounded {
+      .call-action-button.muted .lucide {
         font-variation-settings: "FILL" 1, "wght" 500, "GRAD" 0, "opsz" 24;
       }
       .call-action-button svg {
@@ -3922,7 +3903,7 @@ export const buildStyles = ({
       .tg-call-actions .call-action {
         min-height: 82px;
       }
-      .tg-call-actions .call-action .material-symbols-rounded {
+      .tg-call-actions .call-action .lucide {
         font-size: 23px;
         line-height: 1;
         width: 23px;
@@ -4036,7 +4017,7 @@ export const buildStyles = ({
       .call-screen-overlay-hud:hover {
         opacity: 1;
       }
-      .call-screen-overlay-hud .material-symbols-rounded {
+      .call-screen-overlay-hud .lucide {
         font-size: 16px;
         line-height: 1;
       }
@@ -4189,7 +4170,7 @@ export const buildStyles = ({
         border: 0;
         justify-self: start;
       }
-      .call-modal[data-call-mode="group"] #call-close-button .material-symbols-rounded {
+      .call-modal[data-call-mode="group"] #call-close-button .lucide {
         font-size: 22px;
         color: rgba(255,255,255,0.92);
       }
@@ -6267,7 +6248,7 @@ ${composerStyles}
       .dialog-context-menu-item:hover {
         background: rgba(255,255,255,0.06);
       }
-      .dialog-context-menu-item .material-symbols-rounded {
+      .dialog-context-menu-item .lucide {
         font-size: 21px;
         line-height: 1;
         font-variation-settings: 'FILL' 0, 'wght' 500, 'GRAD' 0, 'opsz' 24;
@@ -6310,7 +6291,7 @@ ${composerStyles}
         stroke-linejoin: round;
         flex-shrink: 0;
       }
-      .message-context-menu-item .material-symbols-rounded {
+      .message-context-menu-item .lucide {
         font-size: 20px;
         line-height: 1;
         font-variation-settings: 'FILL' 0, 'wght' 500, 'GRAD' 0, 'opsz' 24;
@@ -7406,7 +7387,7 @@ ${composerStyles}
         margin-bottom: 18px;
         box-shadow: 0 8px 24px rgba(129, 140, 248, 0.15);
       }
-      .sidebar-ai-welcome-stars .material-symbols-rounded {
+      .sidebar-ai-welcome-stars .lucide {
         font-size: 32px;
         background: linear-gradient(135deg, #a5b4fc 0%, #f472b6 100%);
         -webkit-background-clip: text;
@@ -7895,13 +7876,13 @@ ${composerStyles}
       .sidebar-ai-send:active {
         transform: scale(0.92);
       }
-      .sidebar-ai-send .material-symbols-rounded {
+      .sidebar-ai-send .lucide {
         font-size: 18px;
       }
       .sidebar-ai-send.is-streaming {
         background: rgba(255, 255, 255, 0.08) !important;
       }
-      .sidebar-ai-send.is-streaming .material-symbols-rounded {
+      .sidebar-ai-send.is-streaming .lucide {
         display: none !important;
       }
       .sidebar-ai-stopped-label {
@@ -7976,7 +7957,7 @@ ${composerStyles}
       .sidebar-profile-panel::before {
         display: none;
       }
-      .sidebar-profile-panel .material-symbols-rounded {
+      .sidebar-profile-panel .lucide {
         font-variation-settings: "FILL" 0, "wght" 250, "GRAD" 0, "opsz" 24 !important;
         font-weight: normal;
       }
@@ -8014,9 +7995,9 @@ ${composerStyles}
         background: rgba(255, 255, 255, 0.08);
         color: #fff;
       }
-      .sidebar-profile-back .material-symbols-rounded,
-      .sidebar-profile-edit .material-symbols-rounded,
-      .sidebar-profile-more .material-symbols-rounded {
+      .sidebar-profile-back .lucide,
+      .sidebar-profile-edit .lucide,
+      .sidebar-profile-more .lucide {
         font-size: 22px;
       }
       .sidebar-profile-title {
@@ -8229,7 +8210,7 @@ ${composerStyles}
         flex-shrink: 0;
         box-shadow: none;
       }
-      .sidebar-profile-premium-icon-wrap .material-symbols-rounded {
+      .sidebar-profile-premium-icon-wrap .lucide {
         font-size: 22px;
         color: #c084fc;
       }

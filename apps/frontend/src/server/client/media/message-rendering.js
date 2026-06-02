@@ -181,7 +181,7 @@ export const messageRendering = () => `
         return renderReplyPreviewHtml(message) + '<div class="message-audio-wrap">' +
           '<div class="tg-audio-message message-audio-card' + (isActiveTrack ? " is-playing" : "") + '" data-audio-card data-message-id="' + escapeHtml(message.id) + '" data-audio-duration="' + escapeHtml(String(durationSeconds)) + '" data-audio-size="' + escapeHtml(String(sizeBytes)) + '" title="' + escapeHtml(displayName) + '">' +
             '<button class="tg-audio-play message-audio-toggle" type="button" data-audio-toggle aria-label="Play audio">' +
-              '<span class="tg-audio-icon material-symbols-rounded message-audio-toggle-icon" aria-hidden="true">' + toggleIcon + '</span>' +
+              '<span class="tg-audio-icon lucide message-audio-toggle-icon" aria-hidden="true">' + toggleIcon + '</span>' +
             '</button>' +
             '<div class="tg-audio-content message-audio-main">' +
               '<div class="tg-audio-title message-audio-name" title="' + escapeHtml(displayName) + '">' + escapeHtml(displayName) + '</div>' +
@@ -233,7 +233,7 @@ export const messageRendering = () => `
 
         if (callSummary) {
           return '<div class="message-call-card ' + callSummary.tone + '">' +
-            '<span class="material-symbols-rounded message-call-icon" aria-hidden="true">' + escapeHtml(callSummary.icon) + '</span>' +
+            '<span class="lucide message-call-icon" aria-hidden="true">' + escapeHtml(callSummary.icon) + '</span>' +
             '<div class="message-call-copy">' +
               '<div class="message-call-title">' + escapeHtml(callSummary.title) + '</div>' +
               '<div class="message-call-subtitle">' + escapeHtml(callSummary.subtitle) + '</div>' +

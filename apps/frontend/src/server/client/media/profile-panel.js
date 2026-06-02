@@ -183,7 +183,7 @@ export const profilePanel = () => `
         );
         const secretBadgeTitle = "Secret chat. End-to-end encrypted.";
         const secretBadgeMarkup = (showSecretBadge && isSecretDirect)
-          ? '<span class="dialog-avatar-secret" title="' + escapeHtml(secretBadgeTitle) + '" aria-label="' + escapeHtml(secretBadgeTitle) + '"><span class="material-symbols-rounded">lock</span></span>'
+          ? '<span class="dialog-avatar-secret" title="' + escapeHtml(secretBadgeTitle) + '" aria-label="' + escapeHtml(secretBadgeTitle) + '"><span class="lucide">lock</span></span>'
           : "";
 
         if (dialog.type === "direct" || dialog.type === "group") {
@@ -608,7 +608,7 @@ export const profilePanel = () => `
 
         profileLinkContextMenuBody.innerHTML =
           '<button class="dialog-context-menu-item" type="button" data-action="copy-username-link">' +
-            '<span class="material-symbols-rounded" aria-hidden="true">content_copy</span>' +
+            '<span class="lucide" aria-hidden="true">content_copy</span>' +
             '<span>Copy Username</span>' +
           '</button>';
         profileLinkContextMenuState = { profileUrl: String(profileUrl) };
@@ -716,7 +716,7 @@ export const profilePanel = () => `
 
         groupMemberContextMenuBody.innerHTML =
           '<button class="dialog-context-menu-item" type="button" data-action="send-message">' +
-            '<span class="material-symbols-rounded" aria-hidden="true">chat</span>' +
+            '<span class="lucide" aria-hidden="true">chat</span>' +
             '<span>Send Message</span>' +
           '</button>';
         groupMemberContextMenuState = { userId };

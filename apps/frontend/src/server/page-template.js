@@ -8,10 +8,8 @@ export const buildHtml = ({
   inter600Url,
   inter700Url,
   inter800Url,
-  materialSymbolsRounded400Url,
-  materialSymbolsRounded500Url,
-  materialSymbolsRounded600Url,
-  materialSymbolsRounded700Url,
+  lucideUrl,
+  lucideCss,
   manifestUrl,
   logoDataUrl,
   wallpaperDataUrl,
@@ -46,7 +44,7 @@ export const buildHtml = ({
     <link rel="preload" href="${inter600Url}" as="font" type="font/ttf" crossorigin />
     <link rel="preload" href="${inter700Url}" as="font" type="font/ttf" crossorigin />
     <link rel="preload" href="${inter800Url}" as="font" type="font/ttf" crossorigin />
-    <link rel="preload" href="${materialSymbolsRounded500Url}" as="font" type="font/ttf" crossorigin />
+    <link rel="preload" href="${lucideUrl}" as="font" type="font/ttf" crossorigin />
     <link rel="preload" href="${emojiIconDataUrl}" as="image" />
     <link rel="preload" href="${settingsKeyboardIconDataUrl}" as="image" />
     <link rel="manifest" href="${manifestUrl}" />
@@ -54,16 +52,126 @@ export const buildHtml = ({
     <link rel="apple-touch-icon" href="${logoDataUrl}" />
     <title>TheGraphT Web</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/gsap.min.js"></script>
+    <script>
+      (function() {
+        const iconMap = {
+          'menu': 'icon-menu',
+          'edit': 'icon-edit-2',
+          'edit-2': 'icon-edit-2',
+          'person': 'icon-user',
+          'bookmark': 'icon-bookmark',
+          'logout': 'icon-log-out',
+          'auto_awesome': 'icon-sparkles',
+          'keyboard_arrow_down': 'icon-chevron-down',
+          'close': 'icon-x',
+          'mode_fan': 'icon-wind',
+          'check': 'icon-check',
+          'lock': 'icon-lock',
+          'arrow_upward': 'icon-arrow-up',
+          'campaign': 'icon-megaphone',
+          'groups': 'icon-users',
+          'arrow_back': 'icon-arrow-left',
+          'add_a_photo': 'icon-camera',
+          'arrow_forward': 'icon-arrow-right',
+          'more_vert': 'icon-more-vertical',
+          'alternate_email': 'icon-at-sign',
+          'notifications': 'icon-bell',
+          'chevron_right': 'icon-chevron-right',
+          'storage': 'icon-database',
+          'settings': 'icon-settings',
+          'folder': 'icon-folder',
+          'mood': 'icon-smile',
+          'devices': 'icon-laptop',
+          'translate': 'icon-languages',
+          'star': 'icon-star',
+          'call_end': 'icon-phone-off',
+          'fast_rewind': 'icon-rewind',
+          'pause': 'icon-pause',
+          'play_arrow': 'icon-play',
+          'fast_forward': 'icon-fast-forward',
+          'volume_up': 'icon-volume-2',
+          'volume_off': 'icon-volume-x',
+          'mic': 'icon-mic',
+          'mic_off': 'icon-mic-off',
+          'screen_share': 'icon-monitor-up',
+          'open_in_new': 'icon-external-link',
+          'reply': 'icon-corner-up-left',
+          'download': 'icon-download',
+          'delete': 'icon-trash-2',
+          'error': 'icon-alert-triangle',
+          'gif_box': 'icon-file-image',
+          'autorenew': 'icon-refresh-cw',
+          'search': 'icon-search',
+          'send': 'icon-send',
+          'volume_mute': 'icon-volume-x',
+          'open_in_full': 'icon-expand',
+          'close_fullscreen': 'icon-shrink',
+          'south': 'icon-arrow-down',
+          'volume_down': 'icon-volume-1',
+          'videocam_off': 'icon-video-off',
+          'videocam': 'icon-video',
+          'call': 'icon-phone',
+          'stop_screen_share': 'icon-monitor-off',
+          'repeat': 'icon-repeat'
+        };
+
+        const processIconElement = (el) => {
+          const text = el.textContent.trim();
+          if (text && iconMap[text]) {
+            for (const cls of Array.from(el.classList)) {
+              if (cls.startsWith('icon-')) {
+                el.classList.remove(cls);
+              }
+            }
+            el.classList.add(iconMap[text]);
+            el.textContent = '';
+          }
+        };
+
+        const init = () => {
+          document.querySelectorAll('.lucide, .lucide').forEach(processIconElement);
+        };
+        if (document.readyState === 'loading') {
+          document.addEventListener('DOMContentLoaded', init);
+        } else {
+          init();
+        }
+
+        const observer = new MutationObserver((mutations) => {
+          for (const mutation of mutations) {
+            if (mutation.type === 'childList') {
+              mutation.addedNodes.forEach((node) => {
+                if (node.nodeType === Node.ELEMENT_NODE) {
+                  if (node.classList.contains('lucide') || node.classList.contains('lucide')) {
+                    processIconElement(node);
+                  }
+                  node.querySelectorAll('.lucide, .lucide').forEach(processIconElement);
+                }
+              });
+            } else if (mutation.type === 'characterData') {
+              const parent = mutation.target.parentElement;
+              if (parent && (parent.classList.contains('lucide') || parent.classList.contains('lucide'))) {
+                processIconElement(parent);
+              }
+            }
+          }
+        });
+
+        observer.observe(document.documentElement, {
+          childList: true,
+          subtree: true,
+          characterData: true
+        });
+      })();
+    </script>
     ${buildStyles({
       inter400Url,
       inter500Url,
       inter600Url,
       inter700Url,
       inter800Url,
-      materialSymbolsRounded400Url,
-      materialSymbolsRounded500Url,
-      materialSymbolsRounded600Url,
-      materialSymbolsRounded700Url,
+      lucideUrl,
+      lucideCss,
       wallpaperDataUrl
     })}
   </head>
@@ -164,27 +272,27 @@ export const buildHtml = ({
             <div class="workspace-brand">
               <div class="workspace-brand-leading">
                 <button id="sidebar-menu-button" class="workspace-brand-menu" type="button" aria-label="Sidebar menu">
-                  <span class="material-symbols-rounded" aria-hidden="true">menu</span>
+                  <span class="lucide" aria-hidden="true">menu</span>
                 </button>
                 <h1>TheGrapht</h1>
               </div>
               <button id="sidebar-compose-fab" class="workspace-brand-menu" type="button" aria-label="Open compose menu">
-                <span class="material-symbols-rounded" aria-hidden="true">edit</span>
+                <span class="lucide" aria-hidden="true">edit</span>
               </button>
             </div>
             <div id="sidebar-glass-menu" class="sidebar-glass-menu" aria-hidden="true">
               <div class="sidebar-glass-menu-items">
                 <button id="sidebar-menu-profile" class="sidebar-glass-menu-item" type="button">
-                  <span class="material-symbols-rounded" aria-hidden="true">person</span>
+                  <span class="lucide" aria-hidden="true">person</span>
                   <span>Profile</span>
                 </button>
                 <button id="sidebar-menu-saved" class="sidebar-glass-menu-item" type="button">
-                  <span class="material-symbols-rounded" aria-hidden="true">bookmark</span>
+                  <span class="lucide" aria-hidden="true">bookmark</span>
                   <span>Saved Messages</span>
                 </button>
                 <hr class="sidebar-glass-menu-sep" />
                 <button id="sidebar-menu-logout" class="sidebar-glass-menu-item" type="button">
-                  <span class="material-symbols-rounded" aria-hidden="true">logout</span>
+                  <span class="lucide" aria-hidden="true">logout</span>
                   <span>Log out</span>
                 </button>
               </div>
@@ -206,7 +314,7 @@ export const buildHtml = ({
             <!-- TheGraphT Chat AI Button (M3 Style) -->
             <div class="sidebar-ai-fab-container">
               <button id="sidebar-ai-button" class="sidebar-ai-button" type="button" aria-label="TheGraphT Chat">
-                <span class="material-symbols-rounded" aria-hidden="true">auto_awesome</span>
+                <span class="lucide" aria-hidden="true">auto_awesome</span>
               </button>
               <div class="sidebar-ai-tooltip" aria-hidden="true">TheGraphT Chat</div>
             </div>
@@ -215,32 +323,32 @@ export const buildHtml = ({
             <div id="sidebar-ai-panel" class="sidebar-ai-panel" aria-hidden="true">
               <header class="sidebar-ai-header" style="position: relative;">
                 <div class="sidebar-ai-title-wrap" id="sidebar-ai-model-selector-btn" style="cursor: pointer; user-select: none;">
-                  <span class="material-symbols-rounded sidebar-ai-header-stars" aria-hidden="true" id="sidebar-ai-selected-model-icon">auto_awesome</span>
+                  <span class="lucide sidebar-ai-header-stars" aria-hidden="true" id="sidebar-ai-selected-model-icon">auto_awesome</span>
                   <div class="sidebar-ai-header-copy" style="display: flex; align-items: center; gap: 4px;">
                     <strong class="sidebar-ai-title" id="sidebar-ai-selected-model-name">TheGraphT Chat (Base)</strong>
-                    <span class="material-symbols-rounded" style="font-size: 18px; opacity: 0.7; transition: transform 0.2s ease;" id="sidebar-ai-selector-chevron">keyboard_arrow_down</span>
+                    <span class="lucide" style="font-size: 18px; opacity: 0.7; transition: transform 0.2s ease;" id="sidebar-ai-selector-chevron">keyboard_arrow_down</span>
                   </div>
                 </div>
                 <button id="sidebar-ai-close" class="sidebar-ai-close" type="button" aria-label="Close AI chat">
-                  <span class="material-symbols-rounded" aria-hidden="true">close</span>
+                  <span class="lucide" aria-hidden="true">close</span>
                 </button>
                 
                 <!-- Model Selector Dropdown Menu (Material M3 Glassmorphism Style) -->
                 <div id="sidebar-ai-model-menu" class="sidebar-ai-model-menu" aria-hidden="true">
                   <div class="sidebar-ai-model-menu-item active" data-model="base">
-                    <span class="material-symbols-rounded sidebar-ai-model-icon" aria-hidden="true">mode_fan</span>
+                    <span class="lucide sidebar-ai-model-icon" aria-hidden="true">mode_fan</span>
                     <div class="sidebar-ai-model-info">
                       <div class="sidebar-ai-model-name">TheGraphT Chat (Base)</div>
                       <div class="sidebar-ai-model-desc">Отлично подходит для повседневных задач</div>
                     </div>
-                    <span class="material-symbols-rounded sidebar-ai-model-check" aria-hidden="true" id="sidebar-ai-check-base">check</span>
+                    <span class="lucide sidebar-ai-model-check" aria-hidden="true" id="sidebar-ai-check-base">check</span>
                   </div>
                   <div class="sidebar-ai-model-menu-item" data-model="pro" style="opacity: 0.8;">
-                    <span class="material-symbols-rounded sidebar-ai-model-icon pro" aria-hidden="true">auto_awesome</span>
+                    <span class="lucide sidebar-ai-model-icon pro" aria-hidden="true">auto_awesome</span>
                     <div class="sidebar-ai-model-info">
                       <div class="sidebar-ai-model-name" style="display: flex; align-items: center; gap: 6px;">
                         TheGraphT Chat Pro
-                        <span class="material-symbols-rounded" style="font-size: 15px; color: #a5b4fc;">lock</span>
+                        <span class="lucide" style="font-size: 15px; color: #a5b4fc;">lock</span>
                       </div>
                       <div class="sidebar-ai-model-desc">Gemini Pro (доступно с 15 июня)</div>
                     </div>
@@ -251,7 +359,7 @@ export const buildHtml = ({
               <div id="sidebar-ai-messages" class="sidebar-ai-messages">
                 <div class="sidebar-ai-welcome">
                   <div class="sidebar-ai-welcome-stars">
-                    <span class="material-symbols-rounded" aria-hidden="true">auto_awesome</span>
+                    <span class="lucide" aria-hidden="true">auto_awesome</span>
                   </div>
                   <h3>TheGraphT Chat</h3>
                   <p>Your personal AI assistant built into TheGraphT messenger. Ask me anything or let me analyze your conversations.</p>
@@ -276,7 +384,7 @@ export const buildHtml = ({
                 <div class="sidebar-ai-input-wrap">
                   <textarea id="sidebar-ai-input" rows="1" placeholder="Message TheGraphT Chat..." autocomplete="off"></textarea>
                   <button id="sidebar-ai-send" class="sidebar-ai-send" type="button" aria-label="Send">
-                    <span class="material-symbols-rounded" aria-hidden="true">arrow_upward</span>
+                    <span class="lucide" aria-hidden="true">arrow_upward</span>
                   </button>
                 </div>
               </div>
@@ -284,15 +392,15 @@ export const buildHtml = ({
 
             <div id="sidebar-compose-menu" class="sidebar-compose-menu" aria-hidden="true">
               <button id="sidebar-compose-channel" class="sidebar-compose-menu-item is-disabled" type="button" aria-disabled="true" tabindex="-1">
-                <span class="material-symbols-rounded" aria-hidden="true">campaign</span>
+                <span class="lucide" aria-hidden="true">campaign</span>
                 <span>New Channel</span>
               </button>
               <button id="sidebar-compose-group" class="sidebar-compose-menu-item" type="button">
-                <span class="material-symbols-rounded" aria-hidden="true">groups</span>
+                <span class="lucide" aria-hidden="true">groups</span>
                 <span>New Group</span>
               </button>
               <button id="sidebar-compose-private" class="sidebar-compose-menu-item" type="button">
-                <span class="material-symbols-rounded" aria-hidden="true">lock</span>
+                <span class="lucide" aria-hidden="true">lock</span>
                 <span>New Secret Chat</span>
               </button>
             </div>
@@ -300,7 +408,7 @@ export const buildHtml = ({
               <div id="group-create-step-members" class="group-create-step group-create-step-members">
                 <header class="group-create-header">
                   <button id="group-create-close" class="group-create-back" type="button" aria-label="Close Add Members">
-                    <span class="material-symbols-rounded" aria-hidden="true">arrow_back</span>
+                    <span class="lucide" aria-hidden="true">arrow_back</span>
                   </button>
                   <div class="group-create-title-wrap">
                     <strong id="group-create-step-members-title" class="group-create-title">Add Members</strong>
@@ -315,7 +423,7 @@ export const buildHtml = ({
               <div id="group-create-step-details" class="group-create-step group-create-step-details" aria-hidden="true">
                 <header class="group-create-header">
                   <button id="group-create-details-back" class="group-create-back" type="button" aria-label="Back to Add Members">
-                    <span class="material-symbols-rounded" aria-hidden="true">arrow_back</span>
+                    <span class="lucide" aria-hidden="true">arrow_back</span>
                   </button>
                   <div class="group-create-title-wrap">
                     <strong class="group-create-title">New Group</strong>
@@ -324,7 +432,7 @@ export const buildHtml = ({
                 <div class="group-details-body">
                   <div class="group-details-photo-row">
                     <button id="group-create-photo-button" class="group-create-photo-button" type="button" aria-label="Add group photo">
-                      <span class="material-symbols-rounded" aria-hidden="true">add_a_photo</span>
+                      <span class="lucide" aria-hidden="true">add_a_photo</span>
                       <img id="group-create-photo-preview" class="group-create-photo-preview" alt="Group photo preview" />
                     </button>
                     <input id="group-create-photo-input" type="file" accept="image/*" hidden />
@@ -338,7 +446,7 @@ export const buildHtml = ({
                 </div>
               </div>
               <button id="group-create-next" class="group-create-next" type="button" aria-label="Next step">
-                <span class="material-symbols-rounded" aria-hidden="true">arrow_forward</span>
+                <span class="lucide" aria-hidden="true">arrow_forward</span>
               </button>
             </aside>
 
@@ -346,14 +454,14 @@ export const buildHtml = ({
             <aside id="sidebar-profile-panel" class="sidebar-profile-panel" aria-hidden="true">
               <header class="sidebar-profile-header">
                 <button id="sidebar-profile-back" class="sidebar-profile-back" type="button" aria-label="Close Profile">
-                  <span class="material-symbols-rounded" aria-hidden="true">arrow_back</span>
+                  <span class="lucide" aria-hidden="true">arrow_back</span>
                 </button>
                 <strong class="sidebar-profile-title">Settings</strong>
                 <button class="sidebar-profile-edit" type="button" aria-label="Edit profile">
-                  <span class="material-symbols-rounded" aria-hidden="true">edit</span>
+                  <span class="lucide" aria-hidden="true">edit</span>
                 </button>
                 <button class="sidebar-profile-more" type="button" aria-label="More options">
-                  <span class="material-symbols-rounded" aria-hidden="true">more_vert</span>
+                  <span class="lucide" aria-hidden="true">more_vert</span>
                 </button>
               </header>
 
@@ -370,7 +478,7 @@ export const buildHtml = ({
                 <!-- Info Block -->
                 <div class="sidebar-profile-info-block">
                   <div class="sidebar-profile-info-row">
-                    <span class="material-symbols-rounded sidebar-profile-info-icon" aria-hidden="true">alternate_email</span>
+                    <span class="lucide sidebar-profile-info-icon" aria-hidden="true">alternate_email</span>
                     <div class="sidebar-profile-info-content">
                       <p id="sidebar-profile-username" class="sidebar-profile-info-value"></p>
                       <p class="sidebar-profile-info-label">Username</p>
@@ -381,46 +489,46 @@ export const buildHtml = ({
                 <!-- Settings Menu -->
                 <div class="sidebar-profile-settings-block">
                   <button class="sidebar-profile-setting-row" type="button">
-                    <span class="material-symbols-rounded sidebar-profile-setting-icon" aria-hidden="true">notifications</span>
+                    <span class="lucide sidebar-profile-setting-icon" aria-hidden="true">notifications</span>
                     <span class="sidebar-profile-setting-label">Notifications and Sounds</span>
-                    <span class="material-symbols-rounded sidebar-profile-setting-arrow" aria-hidden="true">chevron_right</span>
+                    <span class="lucide sidebar-profile-setting-arrow" aria-hidden="true">chevron_right</span>
                   </button>
                   <button class="sidebar-profile-setting-row" type="button">
-                    <span class="material-symbols-rounded sidebar-profile-setting-icon" aria-hidden="true">storage</span>
+                    <span class="lucide sidebar-profile-setting-icon" aria-hidden="true">storage</span>
                     <span class="sidebar-profile-setting-label">Data and Storage</span>
-                    <span class="material-symbols-rounded sidebar-profile-setting-arrow" aria-hidden="true">chevron_right</span>
+                    <span class="lucide sidebar-profile-setting-arrow" aria-hidden="true">chevron_right</span>
                   </button>
                   <button class="sidebar-profile-setting-row" type="button">
-                    <span class="material-symbols-rounded sidebar-profile-setting-icon" aria-hidden="true">lock</span>
+                    <span class="lucide sidebar-profile-setting-icon" aria-hidden="true">lock</span>
                     <span class="sidebar-profile-setting-label">Privacy and Security</span>
-                    <span class="material-symbols-rounded sidebar-profile-setting-arrow" aria-hidden="true">chevron_right</span>
+                    <span class="lucide sidebar-profile-setting-arrow" aria-hidden="true">chevron_right</span>
                   </button>
                   <button class="sidebar-profile-setting-row" type="button">
-                    <span class="material-symbols-rounded sidebar-profile-setting-icon" aria-hidden="true">settings</span>
+                    <span class="lucide sidebar-profile-setting-icon" aria-hidden="true">settings</span>
                     <span class="sidebar-profile-setting-label">General Settings</span>
-                    <span class="material-symbols-rounded sidebar-profile-setting-arrow" aria-hidden="true">chevron_right</span>
+                    <span class="lucide sidebar-profile-setting-arrow" aria-hidden="true">chevron_right</span>
                   </button>
                   <button class="sidebar-profile-setting-row" type="button">
-                    <span class="material-symbols-rounded sidebar-profile-setting-icon" aria-hidden="true">folder</span>
+                    <span class="lucide sidebar-profile-setting-icon" aria-hidden="true">folder</span>
                     <span class="sidebar-profile-setting-label">Chat Folders</span>
-                    <span class="material-symbols-rounded sidebar-profile-setting-arrow" aria-hidden="true">chevron_right</span>
+                    <span class="lucide sidebar-profile-setting-arrow" aria-hidden="true">chevron_right</span>
                   </button>
                   <button class="sidebar-profile-setting-row" type="button">
-                    <span class="material-symbols-rounded sidebar-profile-setting-icon" aria-hidden="true">mood</span>
+                    <span class="lucide sidebar-profile-setting-icon" aria-hidden="true">mood</span>
                     <span class="sidebar-profile-setting-label">Stickers and Emoji</span>
-                    <span class="material-symbols-rounded sidebar-profile-setting-arrow" aria-hidden="true">chevron_right</span>
+                    <span class="lucide sidebar-profile-setting-arrow" aria-hidden="true">chevron_right</span>
                   </button>
                   <button class="sidebar-profile-setting-row" type="button">
-                    <span class="material-symbols-rounded sidebar-profile-setting-icon" aria-hidden="true">devices</span>
+                    <span class="lucide sidebar-profile-setting-icon" aria-hidden="true">devices</span>
                     <span class="sidebar-profile-setting-label">Devices</span>
                     <span class="sidebar-profile-device-badge">11</span>
-                    <span class="material-symbols-rounded sidebar-profile-setting-arrow" aria-hidden="true">chevron_right</span>
+                    <span class="lucide sidebar-profile-setting-arrow" aria-hidden="true">chevron_right</span>
                   </button>
                   <button class="sidebar-profile-setting-row" type="button">
-                    <span class="material-symbols-rounded sidebar-profile-setting-icon" aria-hidden="true">translate</span>
+                    <span class="lucide sidebar-profile-setting-icon" aria-hidden="true">translate</span>
                     <span class="sidebar-profile-setting-label">Language</span>
                     <span class="sidebar-profile-setting-value">English</span>
-                    <span class="material-symbols-rounded sidebar-profile-setting-arrow" aria-hidden="true">chevron_right</span>
+                    <span class="lucide sidebar-profile-setting-arrow" aria-hidden="true">chevron_right</span>
                   </button>
                 </div>
 
@@ -428,10 +536,10 @@ export const buildHtml = ({
                 <div class="sidebar-profile-premium-block">
                   <button class="sidebar-profile-premium-row" type="button">
                     <span class="sidebar-profile-premium-icon-wrap" aria-hidden="true">
-                      <span class="material-symbols-rounded" aria-hidden="true">star</span>
+                      <span class="lucide" aria-hidden="true">star</span>
                     </span>
                     <span class="sidebar-profile-premium-label">TheGraphT Premium</span>
-                    <span class="material-symbols-rounded sidebar-profile-setting-arrow" aria-hidden="true">chevron_right</span>
+                    <span class="lucide sidebar-profile-setting-arrow" aria-hidden="true">chevron_right</span>
                   </button>
                 </div>
               </div>
@@ -490,7 +598,7 @@ export const buildHtml = ({
                     <input id="chat-search-input" class="chat-search-input" type="text" placeholder="Search" />
                   </div>
                   <button id="chat-search-close" class="chat-search-close" type="button" aria-label="Close search">
-                    <span class="material-symbols-rounded" aria-hidden="true">close</span>
+                    <span class="lucide" aria-hidden="true">close</span>
                   </button>
                 </div>
                 <div id="chat-search-results" class="chat-search-results"></div>
@@ -505,18 +613,18 @@ export const buildHtml = ({
               <button id="group-call-banner" class="group-call-banner" type="button" aria-hidden="true" hidden>
                 <span id="group-call-banner-state" class="group-call-banner-state">Connecting...</span>
                 <span id="group-call-banner-title" class="group-call-banner-title">Group video chat</span>
-                <span class="material-symbols-rounded" aria-hidden="true">call_end</span>
+                <span class="lucide" aria-hidden="true">call_end</span>
               </button>
               <div id="chat-audio-top-player" class="chat-audio-top-player header-player" aria-hidden="true">
                 <div class="chat-audio-top-inner header-player-content">
                   <button id="chat-audio-top-prev" class="chat-audio-top-btn header-player-button" type="button" aria-label="Rewind 10 seconds">
-                    <span class="material-symbols-rounded" aria-hidden="true">fast_rewind</span>
+                    <span class="lucide" aria-hidden="true">fast_rewind</span>
                   </button>
                   <button id="chat-audio-top-toggle" class="chat-audio-top-btn header-player-button" type="button" aria-label="Pause">
-                    <span id="chat-audio-top-toggle-icon" class="material-symbols-rounded" aria-hidden="true">pause</span>
+                    <span id="chat-audio-top-toggle-icon" class="lucide" aria-hidden="true">pause</span>
                   </button>
                   <button id="chat-audio-top-next" class="chat-audio-top-btn header-player-button" type="button" aria-label="Forward 10 seconds">
-                    <span class="material-symbols-rounded" aria-hidden="true">fast_forward</span>
+                    <span class="lucide" aria-hidden="true">fast_forward</span>
                   </button>
                   <div class="chat-audio-top-copy header-player-title">
                     <div id="chat-audio-top-title" class="chat-audio-top-title">Audio</div>
@@ -524,7 +632,7 @@ export const buildHtml = ({
                   </div>
                   <div class="chat-audio-top-volume-wrap">
                     <button id="chat-audio-top-volume" class="chat-audio-top-btn" type="button" aria-label="Mute or unmute">
-                      <span id="chat-audio-top-volume-icon" class="material-symbols-rounded" aria-hidden="true">volume_up</span>
+                      <span id="chat-audio-top-volume-icon" class="lucide" aria-hidden="true">volume_up</span>
                     </button>
                     <div id="chat-audio-top-volume-popover" class="chat-audio-top-volume-popover" aria-hidden="true">
                       <input id="chat-audio-top-volume-range" class="chat-audio-top-volume-range" type="range" min="0" max="1" step="0.01" value="1" aria-label="Volume" />
@@ -532,10 +640,10 @@ export const buildHtml = ({
                   </div>
                   <button id="chat-audio-top-speed" class="chat-audio-top-speed" type="button" aria-label="Playback speed">1X</button>
                   <button id="chat-audio-top-repeat" class="chat-audio-top-repeat" type="button" aria-label="Repeat">
-                    <span class="material-symbols-rounded" aria-hidden="true">repeat</span>
+                    <span class="lucide" aria-hidden="true">repeat</span>
                   </button>
                   <button id="chat-audio-top-close" class="chat-audio-top-btn" type="button" aria-label="Stop and close player">
-                    <span class="material-symbols-rounded" aria-hidden="true">close</span>
+                    <span class="lucide" aria-hidden="true">close</span>
                   </button>
                 </div>
                 <div id="chat-audio-top-progress" class="chat-audio-top-progress" aria-hidden="true">
@@ -546,7 +654,7 @@ export const buildHtml = ({
                 <div class="chat-profile-panel-header">
                   <span class="chat-profile-panel-title">Info</span>
                   <button id="chat-profile-close" class="chat-profile-panel-close" type="button" aria-label="Close profile">
-                    <span class="material-symbols-rounded" aria-hidden="true">close</span>
+                    <span class="lucide" aria-hidden="true">close</span>
                   </button>
                 </div>
                 <div class="chat-profile-panel-body">
@@ -578,7 +686,7 @@ export const buildHtml = ({
                 </div>
                 <div id="message-list" class="message-list"></div>
                 <button id="chat-scroll-bottom" class="chat-scroll-bottom" type="button" aria-label="Scroll down">
-                  <span class="material-symbols-rounded" aria-hidden="true">south</span>
+                  <span class="lucide" aria-hidden="true">south</span>
                 </button>
 ${buildComposerMarkup({
   emojiIconDataUrl,
@@ -591,10 +699,10 @@ ${buildComposerMarkup({
                   <span id="call-group-kicker" class="call-group-kicker" aria-hidden="true" hidden>Group video chat</span>
                   <div class="tg-call-window-actions">
                     <button id="call-expand-button" class="call-icon-button tg-call-window-button" type="button" aria-label="Toggle fullscreen">
-                      <span class="material-symbols-rounded" aria-hidden="true">open_in_full</span>
+                      <span class="lucide" aria-hidden="true">open_in_full</span>
                     </button>
                     <button id="call-close-button" class="call-icon-button tg-call-window-button" type="button" aria-label="Close call">
-                      <span class="material-symbols-rounded" aria-hidden="true">close</span>
+                      <span class="lucide" aria-hidden="true">close</span>
                     </button>
                   </div>
                   <div id="call-participants-grid" class="call-participants-grid" aria-label="Call participants"></div>
@@ -619,31 +727,31 @@ ${buildComposerMarkup({
                   <div class="call-actions tg-call-actions">
                     <div class="call-action">
                       <button id="call-video-button" class="call-action-button tg-call-action-button btn-camera" type="button" aria-label="Toggle camera">
-                        <span class="material-symbols-rounded" aria-hidden="true">videocam_off</span>
+                        <span class="lucide" aria-hidden="true">videocam_off</span>
                       </button>
                       <span id="call-video-label" class="call-action-label">Camera</span>
                     </div>
                     <div class="call-action">
                       <button id="call-screen-button" class="call-action-button tg-call-action-button btn-screen" type="button" aria-label="Share screen">
-                        <span class="material-symbols-rounded" aria-hidden="true">screen_share</span>
+                        <span class="lucide" aria-hidden="true">screen_share</span>
                       </button>
                       <span id="call-screen-label" class="call-action-label">Screen</span>
                     </div>
                     <div class="call-action">
                       <button id="call-mute-button" class="call-action-button tg-call-action-button btn-mute" type="button" aria-label="Mute microphone">
-                        <span class="material-symbols-rounded" aria-hidden="true">mic</span>
+                        <span class="lucide" aria-hidden="true">mic</span>
                       </button>
                       <span id="call-mute-label" class="call-action-label">Mute</span>
                     </div>
                     <div id="call-accept-wrap" class="call-action" hidden>
                       <button id="call-accept-button" class="call-action-button tg-call-action-button accept" type="button" aria-label="Accept call">
-                        <span class="material-symbols-rounded" aria-hidden="true">call</span>
+                        <span class="lucide" aria-hidden="true">call</span>
                       </button>
                       <span class="call-action-label">Accept</span>
                     </div>
                     <div class="call-action">
                       <button id="call-end-button" class="call-action-button tg-call-action-button end btn-end" type="button" aria-label="End call">
-                        <span class="material-symbols-rounded" aria-hidden="true">call_end</span>
+                        <span class="lucide" aria-hidden="true">call_end</span>
                       </button>
                       <span id="call-end-label" class="call-action-label">Decline</span>
                     </div>
@@ -653,7 +761,7 @@ ${buildComposerMarkup({
                     <div class="call-devices-header">
                       <div class="call-devices-title">Call audio devices</div>
                       <button id="call-devices-close" class="call-icon-button" type="button" aria-label="Close devices panel">
-                        <span class="material-symbols-rounded" aria-hidden="true">close</span>
+                        <span class="lucide" aria-hidden="true">close</span>
                       </button>
                     </div>
                     <div class="call-device-field">
@@ -674,7 +782,7 @@ ${buildComposerMarkup({
                       <div id="call-mini-subtitle" class="call-mini-subtitle">connecting...</div>
                     </div>
                     <button id="call-mini-close" class="call-icon-button" type="button" aria-label="Close mini call">
-                      <span class="material-symbols-rounded" aria-hidden="true">close</span>
+                      <span class="lucide" aria-hidden="true">close</span>
                     </button>
                   </div>
                   <div class="call-mini-cover">
@@ -687,10 +795,10 @@ ${buildComposerMarkup({
                   </div>
                   <div class="call-mini-actions">
                     <button id="call-mini-open" class="call-icon-button" type="button" aria-label="Open call">
-                      <span class="material-symbols-rounded" aria-hidden="true">open_in_full</span>
+                      <span class="lucide" aria-hidden="true">open_in_full</span>
                     </button>
                     <button id="call-mini-end" class="call-icon-button" type="button" aria-label="End call">
-                      <span class="material-symbols-rounded" aria-hidden="true">call_end</span>
+                      <span class="lucide" aria-hidden="true">call_end</span>
                     </button>
                   </div>
                 </div>

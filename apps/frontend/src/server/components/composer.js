@@ -391,7 +391,7 @@ export const composerStyles = `
         user-select: none;
         -webkit-tap-highlight-color: transparent;
       }
-      .emoji-picker-mode-tab .material-symbols-rounded {
+      .emoji-picker-mode-tab .lucide {
         font-size: 20px;
       }
       .emoji-picker-mode-tab:hover {
@@ -442,7 +442,7 @@ export const composerStyles = `
         padding: 40px 20px;
         text-align: center;
       }
-      .gif-empty-state .material-symbols-rounded {
+      .gif-empty-state .lucide {
         font-size: 48px;
         color: rgba(255, 255, 255, 0.15);
       }
@@ -962,7 +962,7 @@ export const buildComposerMarkup = ({
                       </button>
                       <div id="emoji-picker" class="emoji-picker" aria-hidden="true">
                         <div class="emoji-picker-search-wrap">
-                          <span class="emoji-picker-search-icon material-symbols-rounded" aria-hidden="true">search</span>
+                          <span class="emoji-picker-search-icon lucide" aria-hidden="true">search</span>
                           <input id="emoji-picker-search" class="emoji-picker-search" type="text" placeholder="Search Emoji" autocomplete="off" />
                         </div>
                         <div id="emoji-picker-head" class="emoji-picker-head"></div>
@@ -974,10 +974,10 @@ export const buildComposerMarkup = ({
                         </div>
                         <div class="emoji-picker-mode-bar">
                           <button id="emoji-mode-tab-emoji" class="emoji-picker-mode-tab active" type="button" data-picker-mode="emoji">
-                            <span class="material-symbols-rounded" aria-hidden="true">sentiment_satisfied</span>
+                            <span class="lucide" aria-hidden="true">sentiment_satisfied</span>
                           </button>
                           <button id="emoji-mode-tab-gif" class="emoji-picker-mode-tab" type="button" data-picker-mode="gif">
-                            <span class="material-symbols-rounded" aria-hidden="true">gif_box</span>
+                            <span class="lucide" aria-hidden="true">gif_box</span>
                           </button>
                         </div>
                       </div>
@@ -993,11 +993,11 @@ export const buildComposerMarkup = ({
                         </button>
                         <div id="attach-menu" class="attach-menu" aria-hidden="true">
                           <button class="attach-menu-item" type="button" aria-label="Photo or Video" title="Photo or Video" data-attach-action="media">
-                            <span class="material-symbols-rounded" aria-hidden="true">photo_library</span>
+                            <span class="lucide" aria-hidden="true">photo_library</span>
                             <span>Photo or Video</span>
                           </button>
                           <button class="attach-menu-item" type="button" aria-label="File" title="File" data-attach-action="file">
-                            <span class="material-symbols-rounded" aria-hidden="true">draft</span>
+                            <span class="lucide" aria-hidden="true">draft</span>
                             <span>File</span>
                           </button>
                         </div>

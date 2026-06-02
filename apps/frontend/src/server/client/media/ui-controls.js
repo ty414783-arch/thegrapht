@@ -258,7 +258,7 @@ export const uiControls = () => `
         }
         const nextExpanded = !callModal.classList.contains("expanded");
         callModal.classList.toggle("expanded", nextExpanded);
-        const iconNode = callExpandButton.querySelector(".material-symbols-rounded");
+        const iconNode = callExpandButton.querySelector(".lucide");
         if (iconNode) {
           iconNode.textContent = nextExpanded ? "close_fullscreen" : "open_in_full";
         }
@@ -277,7 +277,7 @@ export const uiControls = () => `
       });
       groupCallBanner?.addEventListener("click", (event) => {
         const target = event.target instanceof Element ? event.target : null;
-        const endIconPressed = Boolean(target?.closest(".material-symbols-rounded"));
+        const endIconPressed = Boolean(target?.closest(".lucide"));
         if (endIconPressed && activeCall?.mode === "group") {
           event.preventDefault();
           event.stopPropagation();
@@ -494,7 +494,7 @@ export const uiControls = () => `
           if (isCallExpanded && callModal instanceof HTMLElement) {
             callModal.classList.remove("expanded");
             if (callExpandButton instanceof HTMLElement) {
-              const iconNode = callExpandButton.querySelector(".material-symbols-rounded");
+              const iconNode = callExpandButton.querySelector(".lucide");
               if (iconNode) {
                 iconNode.textContent = "open_in_full";
               }
