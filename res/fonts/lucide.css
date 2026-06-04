@@ -1,12 +1,3 @@
-@font-face {
-  font-family: "lucide";
-  src: url('lucide.eot?t=1779956629206'); /* IE9*/
-  src: url('lucide.eot?t=1779956629206#iefix') format('embedded-opentype') /* IE6-IE8 */,
-  url('lucide.woff2?t=1779956629206') format('woff2'),
-  url('lucide.woff?t=1779956629206') format('woff'),
-  url('lucide.ttf?t=1779956629206') format('truetype'),
-  url('lucide.svg?t=1779956629206') format('svg');
-}
 
 [class^="icon-"], [class*=" icon-"] {
   font-family: 'lucide' !important;font-size: inherit;
