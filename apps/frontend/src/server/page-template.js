@@ -112,7 +112,10 @@ export const buildHtml = ({
           'videocam': 'icon-video',
           'call': 'icon-phone',
           'stop_screen_share': 'icon-monitor-off',
-          'repeat': 'icon-repeat'
+          'repeat': 'icon-repeat',
+          'sentiment_satisfied': 'icon-smile',
+          'photo_library': 'icon-image',
+          'draft': 'icon-file'
         };
 
         const processIconElement = (el) => {
@@ -124,12 +127,18 @@ export const buildHtml = ({
               }
             }
             el.classList.add(iconMap[text]);
+            observer.disconnect();
             el.textContent = '';
+            observer.observe(document.documentElement, {
+              childList: true,
+              subtree: true,
+              characterData: true
+            });
           }
         };
 
         const init = () => {
-          document.querySelectorAll('.lucide, .lucide').forEach(processIconElement);
+          document.querySelectorAll('.lucide').forEach(processIconElement);
         };
         if (document.readyState === 'loading') {
           document.addEventListener('DOMContentLoaded', init);
@@ -138,22 +147,35 @@ export const buildHtml = ({
         }
 
         const observer = new MutationObserver((mutations) => {
+          const elementsToProcess = new Set();
           for (const mutation of mutations) {
             if (mutation.type === 'childList') {
+              const target = mutation.target;
+              if (target.nodeType === Node.ELEMENT_NODE && target.classList.contains('lucide')) {
+                elementsToProcess.add(target);
+              }
               mutation.addedNodes.forEach((node) => {
                 if (node.nodeType === Node.ELEMENT_NODE) {
-                  if (node.classList.contains('lucide') || node.classList.contains('lucide')) {
-                    processIconElement(node);
+                  if (node.classList.contains('lucide')) {
+                    elementsToProcess.add(node);
                   }
-                  node.querySelectorAll('.lucide, .lucide').forEach(processIconElement);
+                  node.querySelectorAll('.lucide').forEach(el => elementsToProcess.add(el));
+                } else if (node.nodeType === Node.TEXT_NODE) {
+                  const parent = node.parentElement;
+                  if (parent && parent.classList.contains('lucide')) {
+                    elementsToProcess.add(parent);
+                  }
                 }
               });
             } else if (mutation.type === 'characterData') {
               const parent = mutation.target.parentElement;
-              if (parent && (parent.classList.contains('lucide') || parent.classList.contains('lucide'))) {
-                processIconElement(parent);
+              if (parent && parent.classList.contains('lucide')) {
+                elementsToProcess.add(parent);
               }
             }
+          }
+          if (elementsToProcess.size > 0) {
+            elementsToProcess.forEach(processIconElement);
           }
         });
 
