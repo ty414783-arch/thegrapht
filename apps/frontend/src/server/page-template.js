@@ -118,6 +118,8 @@ export const buildHtml = ({
           'draft': 'icon-file'
         };
 
+        let observer;
+
         const processIconElement = (el) => {
           const text = el.textContent.trim();
           if (text && iconMap[text]) {
@@ -127,26 +129,19 @@ export const buildHtml = ({
               }
             }
             el.classList.add(iconMap[text]);
-            observer.disconnect();
+            if (observer) observer.disconnect();
             el.textContent = '';
-            observer.observe(document.documentElement, {
-              childList: true,
-              subtree: true,
-              characterData: true
-            });
+            if (observer) {
+              observer.observe(document.documentElement, {
+                childList: true,
+                subtree: true,
+                characterData: true
+              });
+            }
           }
         };
 
-        const init = () => {
-          document.querySelectorAll('.lucide').forEach(processIconElement);
-        };
-        if (document.readyState === 'loading') {
-          document.addEventListener('DOMContentLoaded', init);
-        } else {
-          init();
-        }
-
-        const observer = new MutationObserver((mutations) => {
+        observer = new MutationObserver((mutations) => {
           const elementsToProcess = new Set();
           for (const mutation of mutations) {
             if (mutation.type === 'childList') {
@@ -184,6 +179,15 @@ export const buildHtml = ({
           subtree: true,
           characterData: true
         });
+
+        const init = () => {
+          document.querySelectorAll('.lucide').forEach(processIconElement);
+        };
+        if (document.readyState === 'loading') {
+          document.addEventListener('DOMContentLoaded', init);
+        } else {
+          init();
+        }
       })();
     </script>
     ${buildStyles({
