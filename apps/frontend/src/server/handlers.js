@@ -498,7 +498,7 @@ export const createRequestHandler = ({
   }
 
   const hostHeader = request.headers.host || "";
-  const isWebDomain = hostHeader.startsWith("web.") || hostHeader.startsWith("dev.");
+  const isWebDomain = hostHeader.startsWith("web.") || hostHeader.startsWith("dev.") || hostHeader.includes("localhost") || hostHeader.includes("127.0.0.1");
 
   if (!isWebDomain && (request.url === "/" || request.url === "/index.html")) {
     sendTextResponse(request, response, 200, {

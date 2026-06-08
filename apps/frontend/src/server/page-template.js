@@ -115,7 +115,11 @@ export const buildHtml = ({
           'repeat': 'icon-repeat',
           'sentiment_satisfied': 'icon-smile',
           'photo_library': 'icon-image',
-          'draft': 'icon-file'
+          'draft': 'icon-file',
+          'content_copy': 'icon-copy',
+          'chat': 'icon-message-square',
+          'call_made': 'icon-phone-outgoing',
+          'call_received': 'icon-phone-incoming'
         };
 
         let observer;
