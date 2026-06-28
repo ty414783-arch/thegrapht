@@ -61,7 +61,7 @@ export const callUi = () => `
           if (callExpandButton) {
             const iconNode = callExpandButton.querySelector(".lucide");
             if (iconNode) {
-              iconNode.textContent = "open_in_full";
+              iconNode.outerHTML = window.getIcon("open_in_full", iconNode.className);
             }
           }
           syncActiveCallChip();
@@ -163,7 +163,7 @@ export const callUi = () => `
                   '<div class="call-group-row-state">' + escapeHtml(rowState) + '</div>' +
                 '</div>' +
               '</div>' +
-              '<span class="lucide call-group-row-mic' + (participant?.isMuted ? " muted" : " active") + '" aria-hidden="true">' + (participant?.isMuted ? "mic_off" : "mic") + '</span>' +
+              window.getIcon(participant?.isMuted ? "mic_off" : "mic", "call-group-row-mic" + (participant?.isMuted ? " muted" : " active"), 'aria-hidden="true"') +
             '</div>';
           });
           callGroupList.innerHTML = rows.join("");
@@ -175,14 +175,14 @@ export const callUi = () => `
         callMuteButton.classList.toggle("muted", Boolean(activeCall.isMuted));
         const muteIconNode = callMuteButton.querySelector(".lucide");
         if (muteIconNode) {
-          muteIconNode.textContent = activeCall.isMuted ? "mic_off" : "mic";
+          muteIconNode.outerHTML = window.getIcon(activeCall.isMuted ? "mic_off" : "mic", muteIconNode.className);
         }
         if (callVideoButton) {
           callVideoButton.classList.toggle("active", Boolean(activeCall.cameraEnabled));
           callVideoButton.classList.toggle("muted", !Boolean(activeCall.cameraEnabled));
           const videoIconNode = callVideoButton.querySelector(".lucide");
           if (videoIconNode) {
-            videoIconNode.textContent = activeCall.cameraEnabled ? "videocam" : "videocam_off";
+            videoIconNode.outerHTML = window.getIcon(activeCall.cameraEnabled ? "videocam" : "videocam_off", videoIconNode.className);
           }
         }
         if (callScreenButton) {
@@ -202,7 +202,7 @@ export const callUi = () => `
           );
           const screenIconNode = callScreenButton.querySelector(".lucide");
           if (screenIconNode) {
-            screenIconNode.textContent = activeCall.screenEnabled ? "stop_screen_share" : "screen_share";
+            screenIconNode.outerHTML = window.getIcon(activeCall.screenEnabled ? "stop_screen_share" : "screen_share", screenIconNode.className);
           }
         }
         callMuteLabel.textContent = "Mute";
@@ -392,7 +392,7 @@ export const callUi = () => `
           '</div>' +
           '<div class="participant-name call-participant-meta">' +
             '<span class="call-participant-name">' + escapeHtml(name || "Guest") + '</span>' +
-            '<span class="lucide participant-mic call-participant-mic' + (muted ? " muted" : "") + '" aria-hidden="true">' + (muted ? "mic_off" : "mic") + '</span>' +
+            window.getIcon(muted ? "mic_off" : "mic", "participant-mic call-participant-mic" + (muted ? " muted" : ""), 'aria-hidden="true"') +
           '</div>' +
         '</div>'
       );
@@ -774,13 +774,18 @@ export const callUi = () => `
 
 
       const avatarPalettes = [
-        ["#6cb5ff", "#4a8fe9"],
-        ["#ff9f6c", "#ea6d4a"],
-        ["#7de3b2", "#39b67f"],
-        ["#f7a6d8", "#d66ab3"],
-        ["#b49cff", "#7f69ee"],
-        ["#ffd56a", "#f0a93e"],
-        ["#7fd4ff", "#3d8fe0"]
+        ["#ff9374", "#ff3b30"],  // vibrant orange-red
+        ["#5ac8fa", "#007aff"],  // vivid sky blue
+        ["#34e2e2", "#00838f"],  // cyan teal
+        ["#82ea64", "#30af25"],  // lush green
+        ["#e286ff", "#8e2de2"],  // rich violet/purple
+        ["#ff6b9d", "#e01b5d"],  // hot pink
+        ["#ff9a44", "#fc6076"],  // sunset orange-pink
+        ["#7085f7", "#3b55e6"],  // indigo
+        ["#3cdbb5", "#00a383"],  // teal
+        ["#ffcc00", "#ff9500"],  // amber/gold
+        ["#b08875", "#7c5c4c"],  // warm brown
+        ["#90a4ae", "#455a64"],  // slate blue-grey
       ];
       const hashSeed = (seed) => {
         const text = String(seed || "?");
@@ -812,8 +817,7 @@ export const callUi = () => `
           '<stop offset="100%" stop-color="', palette[1], '"/>',
           '</linearGradient></defs>',
           '<circle cx="64" cy="64" r="64" fill="url(#g)"/>',
-          '<circle cx="38" cy="30" r="18" fill="#ffffff" opacity="0.08"/>',
-          '<text x="50%" y="54%" dominant-baseline="middle" text-anchor="middle" fill="#ffffff" font-family="Roboto, Segoe UI, Trebuchet MS, sans-serif" font-size="58" font-weight="700">',
+          '<text x="50%" y="52%" dominant-baseline="central" text-anchor="middle" fill="#ffffff" font-family="Inter, Roboto, Segoe UI, sans-serif" font-size="64" font-weight="500">',
           letter,
           '</text></svg>'
         ].join("");

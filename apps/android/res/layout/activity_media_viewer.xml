@@ -14,16 +14,27 @@
         android:paddingRight="18dp"
         android:paddingBottom="10dp">
 
-        <TextView
-            android:id="@+id/viewerAvatar"
+        <FrameLayout
             android:layout_width="42dp"
-            android:layout_height="42dp"
-            android:background="@drawable/bg_avatar_circle"
-            android:gravity="center"
-            android:text="T"
-            android:textColor="@color/tg_white"
-            android:textSize="18sp"
-            android:textStyle="bold" />
+            android:layout_height="42dp">
+
+            <TextView
+                android:id="@+id/viewerAvatar"
+                android:layout_width="42dp"
+                android:layout_height="42dp"
+                android:background="@drawable/bg_avatar_circle"
+                android:gravity="center"
+                android:text="T"
+                android:textColor="@color/tg_white"
+                android:textSize="18sp"
+                android:textStyle="bold" />
+
+            <su.thegrapht.app.CircleImageView
+                android:id="@+id/viewerAvatarImage"
+                android:layout_width="42dp"
+                android:layout_height="42dp"
+                android:visibility="gone" />
+        </FrameLayout>
 
         <LinearLayout
             android:layout_width="0dp"
@@ -67,6 +78,6 @@
         android:layout_marginTop="88dp"
         android:layout_marginBottom="22dp"
         android:adjustViewBounds="true"
-        android:scaleType="fitCenter" />
+        android:scaleType="matrix" />
 
 </FrameLayout>

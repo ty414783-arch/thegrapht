@@ -2,14 +2,14 @@
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:background="@drawable/tg_wallpaper"
+    android:background="@color/tg_bg"
     android:orientation="vertical">
 
-    <!-- Premium White Action Bar -->
+    <!-- Premium Action Bar -->
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:background="@color/tg_white"
+        android:background="@color/tg_panel"
         android:gravity="center_vertical"
         android:minHeight="60dp"
         android:orientation="horizontal"
@@ -19,22 +19,21 @@
         android:paddingBottom="8dp"
         android:elevation="4dp">
 
-        <TextView
+        <ImageView
             android:id="@+id/chatBack"
             android:layout_width="36dp"
             android:layout_height="36dp"
-            android:gravity="center"
-            android:text="‹"
-            android:textColor="#2E79C9"
-            android:textSize="32sp"
-            android:textStyle="bold"
+            android:background="@drawable/bg_icon_circle"
+            android:src="@drawable/ic_arrow_left"
+            android:tint="@color/tg_primary_alt"
+            android:padding="8dp"
             android:clickable="true"
             android:focusable="true"/>
 
         <LinearLayout
             android:layout_width="0dp"
             android:layout_height="wrap_content"
-            android:layout_marginLeft="8dp"
+            android:layout_marginLeft="10dp"
             android:layout_weight="1"
             android:orientation="vertical">
 
@@ -42,8 +41,8 @@
                 android:id="@+id/chatTitle"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:textColor="#1F1F1F"
-                android:textSize="17sp"
+                android:textColor="@color/tg_text"
+                android:textSize="16sp"
                 android:textStyle="bold" />
 
             <TextView
@@ -51,43 +50,46 @@
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="2dp"
-                android:textColor="#6E7C8B"
-                android:textSize="12sp" />
+                android:textColor="@color/tg_text_muted"
+                android:textSize="11sp" />
         </LinearLayout>
 
-        <TextView
+        <ImageView
             android:id="@+id/chatSearchButton"
             android:layout_width="38dp"
             android:layout_height="38dp"
-            android:background="@drawable/bg_tab_inactive"
-            android:gravity="center"
-            android:text="⌕"
-            android:textColor="#2E79C9"
-            android:textSize="20sp" />
+            android:background="@drawable/bg_icon_circle"
+            android:src="@drawable/ic_search"
+            android:tint="@color/tg_primary_alt"
+            android:padding="10dp"
+            android:clickable="true"
+            android:focusable="true" />
 
-        <TextView
+        <ImageView
             android:id="@+id/chatCallButton"
             android:layout_width="38dp"
             android:layout_height="38dp"
             android:layout_marginLeft="8dp"
-            android:background="@drawable/bg_tab_inactive"
-            android:gravity="center"
-            android:text="☎"
-            android:textColor="#2E79C9"
-            android:textSize="18sp" />
+            android:background="@drawable/bg_icon_circle"
+            android:src="@drawable/ic_phone"
+            android:tint="@color/tg_primary_alt"
+            android:padding="10dp"
+            android:clickable="true"
+            android:focusable="true" />
     </LinearLayout>
 
     <LinearLayout
         android:id="@+id/chatSearchPanel"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:background="#F1F5F9"
+        android:background="@color/tg_panel_soft"
         android:gravity="center_vertical"
         android:orientation="horizontal"
         android:paddingLeft="12dp"
         android:paddingTop="8dp"
         android:paddingRight="12dp"
-        android:paddingBottom="8dp">
+        android:paddingBottom="8dp"
+        android:visibility="gone">
 
         <EditText
             android:id="@+id/chatSearchInput"
@@ -98,8 +100,8 @@
             android:hint="Поиск по сообщениям"
             android:paddingLeft="8dp"
             android:paddingRight="8dp"
-            android:textColor="#1F1F1F"
-            android:textColorHint="#94A3B8"
+            android:textColor="@color/tg_text"
+            android:textColorHint="@color/tg_text_muted"
             android:textSize="14sp" />
 
         <TextView
@@ -107,7 +109,7 @@
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:layout_marginLeft="8dp"
-            android:textColor="#6E7C8B"
+            android:textColor="@color/tg_text_muted"
             android:textSize="13sp" />
 
         <TextView
@@ -118,7 +120,7 @@
             android:background="@drawable/bg_tab_badge_inactive"
             android:gravity="center"
             android:text="✕"
-            android:textColor="#6E7C8B"
+            android:textColor="@color/tg_text_muted"
             android:textSize="14sp" />
     </LinearLayout>
 
@@ -142,11 +144,65 @@
             android:paddingBottom="12dp" />
     </ScrollView>
 
-    <!-- Premium Message Composer Footer -->
+    <!-- Reply Preview Bar -->
+    <LinearLayout
+        android:id="@+id/chatReplyPreviewBar"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:background="@color/tg_panel_soft"
+        android:gravity="center_vertical"
+        android:orientation="horizontal"
+        android:paddingLeft="14dp"
+        android:paddingTop="8dp"
+        android:paddingRight="14dp"
+        android:paddingBottom="8dp"
+        android:visibility="gone">
+
+        <View
+            android:layout_width="3dp"
+            android:layout_height="32dp"
+            android:background="@color/tg_primary_alt" />
+
+        <LinearLayout
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_marginLeft="10dp"
+            android:layout_weight="1"
+            android:orientation="vertical">
+
+            <TextView
+                android:id="@+id/chatReplySender"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:textColor="@color/tg_primary_alt"
+                android:textSize="12sp"
+                android:textStyle="bold" />
+
+            <TextView
+                android:id="@+id/chatReplyText"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:ellipsize="end"
+                android:maxLines="1"
+                android:textColor="@color/tg_text_muted"
+                android:textSize="12sp" />
+        </LinearLayout>
+
+        <ImageView
+            android:id="@+id/chatReplyClose"
+            android:layout_width="24dp"
+            android:layout_height="24dp"
+            android:src="@android:drawable/ic_menu_close_clear_cancel"
+            android:tint="@color/tg_text_muted"
+            android:clickable="true"
+            android:focusable="true"/>
+    </LinearLayout>
+
+    <!-- Message Composer Footer -->
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:background="@color/tg_white"
+        android:background="@color/tg_panel"
         android:gravity="center_vertical"
         android:orientation="horizontal"
         android:paddingLeft="10dp"
@@ -155,16 +211,29 @@
         android:paddingBottom="8dp"
         android:elevation="8dp">
 
-        <TextView
+        <ImageView
             android:id="@+id/chatAttachButton"
             android:layout_width="38dp"
             android:layout_height="38dp"
-            android:layout_marginRight="8dp"
-            android:background="@drawable/bg_tab_inactive"
-            android:gravity="center"
-            android:text="⌁"
-            android:textColor="#2E79C9"
-            android:textSize="22sp" />
+            android:layout_marginRight="4dp"
+            android:background="@drawable/bg_icon_circle"
+            android:src="@drawable/ic_paperclip"
+            android:tint="@color/tg_primary_alt"
+            android:padding="8dp"
+            android:clickable="true"
+            android:focusable="true"/>
+
+        <ImageView
+            android:id="@+id/chatEmojiButton"
+            android:layout_width="38dp"
+            android:layout_height="38dp"
+            android:layout_marginRight="6dp"
+            android:background="@drawable/bg_icon_circle"
+            android:src="@drawable/ic_smile"
+            android:tint="@color/tg_primary_alt"
+            android:padding="8dp"
+            android:clickable="true"
+            android:focusable="true"/>
 
         <EditText
             android:id="@+id/chatComposerInput"
@@ -175,21 +244,74 @@
             android:hint="Сообщение"
             android:paddingLeft="14dp"
             android:paddingRight="14dp"
-            android:textColor="#1F1F1F"
-            android:textColorHint="#94A3B8"
+            android:textColor="@color/tg_text"
+            android:textColorHint="@color/tg_text_muted"
             android:textSize="15sp"
             android:maxLines="4"/>
 
-        <Button
+        <ImageView
             android:id="@+id/chatSendButton"
             android:layout_width="40dp"
             android:layout_height="40dp"
             android:layout_marginLeft="8dp"
             android:background="@drawable/bg_tab_active"
-            android:text="➤"
-            android:textAllCaps="false"
-            android:textColor="@color/tg_white"
-            android:textSize="16sp" />
+            android:src="@drawable/ic_send"
+            android:tint="@color/tg_white"
+            android:padding="8dp"
+            android:clickable="true"
+            android:focusable="true"/>
+    </LinearLayout>
+
+    <!-- Premium Apple Emoji Panel Container -->
+    <LinearLayout
+        android:id="@+id/chatEmojiPanel"
+        android:layout_width="match_parent"
+        android:layout_height="250dp"
+        android:background="@color/tg_panel"
+        android:orientation="vertical"
+        android:visibility="gone">
+
+        <!-- Search input for emoji -->
+        <EditText
+            android:id="@+id/chatEmojiSearch"
+            android:layout_width="match_parent"
+            android:layout_height="38dp"
+            android:layout_margin="8dp"
+            android:background="@drawable/bg_input_tg"
+            android:hint="Поиск эмодзи"
+            android:paddingLeft="12dp"
+            android:paddingRight="12dp"
+            android:textColor="@color/tg_text"
+            android:textColorHint="@color/tg_text_muted"
+            android:textSize="14sp"
+            android:maxLines="1" />
+
+        <!-- Category selector bar -->
+        <HorizontalScrollView
+            android:layout_width="match_parent"
+            android:layout_height="36dp"
+            android:scrollbars="none"
+            android:background="@color/tg_panel_soft">
+            <LinearLayout
+                android:id="@+id/chatEmojiTabs"
+                android:layout_width="wrap_content"
+                android:layout_height="match_parent"
+                android:orientation="horizontal"
+                android:paddingLeft="8dp"
+                android:paddingRight="8dp">
+                <!-- Dynamically populated or bound categories -->
+            </LinearLayout>
+        </HorizontalScrollView>
+
+        <GridView
+            android:id="@+id/chatEmojiGrid"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:numColumns="8"
+            android:horizontalSpacing="6dp"
+            android:verticalSpacing="6dp"
+            android:padding="8dp"
+            android:scrollbars="none" />
     </LinearLayout>
 
 </LinearLayout>

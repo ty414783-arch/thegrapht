@@ -188,18 +188,7 @@ export const composerStyles = `
         user-select: none !important;
       }
       .emoji-picker-tab::after {
-        content: "";
-        position: absolute;
-        left: 50%;
-        bottom: -10px;
-        width: 14px;
-        height: 2px;
-        border-radius: 999px;
-        background: linear-gradient(90deg, #818cf8 0%, #38bdf8 100%);
-        transform: translateX(-50%) scaleX(0.2);
-        opacity: 0;
-        pointer-events: none;
-        transition: opacity 0.2s ease, transform 0.2s cubic-bezier(0.34, 1.56, 0.64, 1);
+        display: none;
       }
       .emoji-picker-tab-image {
         width: 20px;
@@ -404,6 +393,15 @@ export const composerStyles = `
       .emoji-picker-mode-tab.active {
         background: rgba(129, 140, 248, 0.15);
         color: #a5b4fc;
+      }
+      .emoji-picker-mode-tab.disabled {
+        opacity: 0.35;
+        cursor: not-allowed;
+        pointer-events: none;
+      }
+      .emoji-picker-mode-tab.disabled:hover {
+        background: transparent;
+        color: rgba(255, 255, 255, 0.45);
       }
       .gif-grid {
         display: grid;
@@ -933,7 +931,8 @@ export const composerStyles = `
 
 export const buildComposerMarkup = ({
   emojiIconDataUrl,
-  settingsKeyboardIconDataUrl
+  settingsKeyboardIconDataUrl,
+  getIconHtml
 }) => `
                 <div id="chat-composer" class="composer">
                   <div class="composer-stack">
@@ -962,7 +961,7 @@ export const buildComposerMarkup = ({
                       </button>
                       <div id="emoji-picker" class="emoji-picker" aria-hidden="true">
                         <div class="emoji-picker-search-wrap">
-                          <span class="emoji-picker-search-icon lucide" aria-hidden="true">search</span>
+                          ${getIconHtml("search", "emoji-picker-search-icon", "aria-hidden=\"true\"")}
                           <input id="emoji-picker-search" class="emoji-picker-search" type="text" placeholder="Search Emoji" autocomplete="off" />
                         </div>
                         <div id="emoji-picker-head" class="emoji-picker-head"></div>
@@ -974,10 +973,10 @@ export const buildComposerMarkup = ({
                         </div>
                         <div class="emoji-picker-mode-bar">
                           <button id="emoji-mode-tab-emoji" class="emoji-picker-mode-tab active" type="button" data-picker-mode="emoji">
-                            <span class="lucide" aria-hidden="true">sentiment_satisfied</span>
+                            ${getIconHtml("sentiment_satisfied", "", "aria-hidden=\"true\"")}
                           </button>
-                          <button id="emoji-mode-tab-gif" class="emoji-picker-mode-tab" type="button" data-picker-mode="gif">
-                            <span class="lucide" aria-hidden="true">gif_box</span>
+                          <button id="emoji-mode-tab-gif" class="emoji-picker-mode-tab disabled" type="button" data-picker-mode="gif" disabled>
+                            ${getIconHtml("gif_box", "", "aria-hidden=\"true\"")}
                           </button>
                         </div>
                       </div>
@@ -993,11 +992,11 @@ export const buildComposerMarkup = ({
                         </button>
                         <div id="attach-menu" class="attach-menu" aria-hidden="true">
                           <button class="attach-menu-item" type="button" aria-label="Photo or Video" title="Photo or Video" data-attach-action="media">
-                            <span class="lucide" aria-hidden="true">photo_library</span>
+                            ${getIconHtml("photo_library", "", "aria-hidden=\"true\"")}
                             <span>Photo or Video</span>
                           </button>
                           <button class="attach-menu-item" type="button" aria-label="File" title="File" data-attach-action="file">
-                            <span class="lucide" aria-hidden="true">draft</span>
+                            ${getIconHtml("draft", "", "aria-hidden=\"true\"")}
                             <span>File</span>
                           </button>
                         </div>

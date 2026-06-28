@@ -590,7 +590,7 @@ export const buildHomeHtml = ({
         
         <div class="cta-buttons">
           <a href="https://web.thegrapht.su" class="cta-btn-primary">Open Web Client</a>
-          <button class="cta-btn-secondary" id="download-win-btn">Download for Windows</button>
+          <a href="/download/release/desktop/TheGrapht-Setup-0.2.28.exe" class="cta-btn-secondary" id="download-win-btn" download>Download for Windows (v0.2.28)</a>
         </div>
       </section>
 
@@ -729,11 +729,6 @@ export const buildHomeHtml = ({
         const closeModalBtn = document.getElementById('close-modal-btn');
 
         if (winBtn && modal && closeModalBtn) {
-          winBtn.addEventListener('click', (e) => {
-            e.preventDefault();
-            modal.classList.add('active');
-          });
-
           closeModalBtn.addEventListener('click', () => {
             modal.classList.remove('active');
           });

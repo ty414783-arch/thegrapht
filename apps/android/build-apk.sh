@@ -2,12 +2,12 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")" && pwd)"
-SDK="/usr/lib/android-sdk"
-PLATFORM="$SDK/platforms/android-23/android.jar"
-AAPT="/usr/bin/aapt"
-DX="/usr/lib/android-sdk/build-tools/debian/dx"
-ZIPALIGN="/usr/bin/zipalign"
-APKSIGNER="/usr/bin/apksigner"
+SDK="/var/lib/containerd/io.containerd.snapshotter.v1.overlayfs/snapshots/1017/fs/opt/android-sdk-linux"
+PLATFORM="$SDK/platforms/android-35/android.jar"
+AAPT="$SDK/build-tools/35.0.0/aapt"
+D8="/var/lib/containerd/io.containerd.snapshotter.v1.overlayfs/snapshots/1017/fs/opt/android-sdk-linux/build-tools/35.0.0/d8"
+ZIPALIGN="$SDK/build-tools/35.0.0/zipalign"
+APKSIGNER="$SDK/build-tools/35.0.0/apksigner"
 KOTLINC="/usr/bin/kotlinc"
 KOTLIN_STDLIB="/usr/share/java/kotlin-stdlib.jar"
 KOTLIN_STDLIB_JDK7="/usr/share/java/kotlin-stdlib-jdk7.jar"
@@ -41,8 +41,9 @@ $KOTLINC \
   -d "$ROOT/build/obj" \
   $(find "$ROOT/src-kotlin" -name '*.kt' | sort)
 
-$DX --dex --output="$ROOT/build/classes.dex" \
-  "$ROOT/build/obj" \
+$D8 --output "$ROOT/build" \
+  --lib "$PLATFORM" \
+  $(find "$ROOT/build/obj" -name '*.class' | sort) \
   "$KOTLIN_STDLIB" \
   "$KOTLIN_STDLIB_JDK7" \
   "$KOTLIN_STDLIB_JDK8"

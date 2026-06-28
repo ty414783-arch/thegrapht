@@ -1,5 +1,17 @@
 import { buildComposerMarkup } from "./components/composer.js";
 import { buildStyles } from "./components/styles.js";
+import { iconMap, lucideSvgs } from "./icons.js";
+
+export const getIconHtml = (name, extraClasses = "", attrs = "") => {
+  const lucideName = iconMap[name] || name;
+  const svgContent = lucideSvgs[lucideName];
+  if (!svgContent) {
+    console.warn("Icon not found: " + name);
+    return "";
+  }
+  const attrStr = attrs ? " " + attrs : "";
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-svg icon-${lucideName} ${extraClasses}"${attrStr}>${svgContent}</svg>`;
+};
 
 export const buildHtml = ({
   clientScriptUrl,
@@ -8,14 +20,13 @@ export const buildHtml = ({
   inter600Url,
   inter700Url,
   inter800Url,
-  lucideUrl,
-  lucideCss,
   manifestUrl,
   logoDataUrl,
   wallpaperDataUrl,
   emojiIconDataUrl,
   settingsKeyboardIconDataUrl,
-  uiFlags
+  uiFlags,
+  configScript = ""
 }) => {
   const pageClassNames = [
     "page",
@@ -44,164 +55,20 @@ export const buildHtml = ({
     <link rel="preload" href="${inter600Url}" as="font" type="font/ttf" crossorigin />
     <link rel="preload" href="${inter700Url}" as="font" type="font/ttf" crossorigin />
     <link rel="preload" href="${inter800Url}" as="font" type="font/ttf" crossorigin />
-    <link rel="preload" href="${lucideUrl}" as="font" type="font/ttf" crossorigin />
     <link rel="preload" href="${emojiIconDataUrl}" as="image" />
     <link rel="preload" href="${settingsKeyboardIconDataUrl}" as="image" />
     <link rel="manifest" href="${manifestUrl}" />
     <link rel="icon" href="${logoDataUrl}" />
     <link rel="apple-touch-icon" href="${logoDataUrl}" />
     <title>TheGraphT Web</title>
+    <script src="/config.js" defer></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/gsap.min.js"></script>
-    <script>
-      (function() {
-        const iconMap = {
-          'menu': 'icon-menu',
-          'edit': 'icon-edit-2',
-          'edit-2': 'icon-edit-2',
-          'person': 'icon-user',
-          'bookmark': 'icon-bookmark',
-          'logout': 'icon-log-out',
-          'auto_awesome': 'icon-sparkles',
-          'keyboard_arrow_down': 'icon-chevron-down',
-          'close': 'icon-x',
-          'mode_fan': 'icon-wind',
-          'check': 'icon-check',
-          'lock': 'icon-lock',
-          'arrow_upward': 'icon-arrow-up',
-          'campaign': 'icon-megaphone',
-          'groups': 'icon-users',
-          'arrow_back': 'icon-arrow-left',
-          'add_a_photo': 'icon-camera',
-          'arrow_forward': 'icon-arrow-right',
-          'more_vert': 'icon-more-vertical',
-          'alternate_email': 'icon-at-sign',
-          'notifications': 'icon-bell',
-          'chevron_right': 'icon-chevron-right',
-          'storage': 'icon-database',
-          'settings': 'icon-settings',
-          'folder': 'icon-folder',
-          'mood': 'icon-smile',
-          'devices': 'icon-laptop',
-          'translate': 'icon-languages',
-          'star': 'icon-star',
-          'call_end': 'icon-phone-off',
-          'fast_rewind': 'icon-rewind',
-          'pause': 'icon-pause',
-          'play_arrow': 'icon-play',
-          'fast_forward': 'icon-fast-forward',
-          'volume_up': 'icon-volume-2',
-          'volume_off': 'icon-volume-x',
-          'mic': 'icon-mic',
-          'mic_off': 'icon-mic-off',
-          'screen_share': 'icon-monitor-up',
-          'open_in_new': 'icon-external-link',
-          'reply': 'icon-corner-up-left',
-          'download': 'icon-download',
-          'delete': 'icon-trash-2',
-          'error': 'icon-alert-triangle',
-          'gif_box': 'icon-file-image',
-          'autorenew': 'icon-refresh-cw',
-          'search': 'icon-search',
-          'send': 'icon-send',
-          'volume_mute': 'icon-volume-x',
-          'open_in_full': 'icon-expand',
-          'close_fullscreen': 'icon-shrink',
-          'south': 'icon-arrow-down',
-          'volume_down': 'icon-volume-1',
-          'videocam_off': 'icon-video-off',
-          'videocam': 'icon-video',
-          'call': 'icon-phone',
-          'stop_screen_share': 'icon-monitor-off',
-          'repeat': 'icon-repeat',
-          'sentiment_satisfied': 'icon-smile',
-          'photo_library': 'icon-image',
-          'draft': 'icon-file',
-          'content_copy': 'icon-copy',
-          'chat': 'icon-message-square',
-          'call_made': 'icon-phone-outgoing',
-          'call_received': 'icon-phone-incoming'
-        };
-
-        let observer;
-
-        const processIconElement = (el) => {
-          const text = el.textContent.trim();
-          if (text && iconMap[text]) {
-            for (const cls of Array.from(el.classList)) {
-              if (cls.startsWith('icon-')) {
-                el.classList.remove(cls);
-              }
-            }
-            el.classList.add(iconMap[text]);
-            if (observer) observer.disconnect();
-            el.textContent = '';
-            if (observer) {
-              observer.observe(document.documentElement, {
-                childList: true,
-                subtree: true,
-                characterData: true
-              });
-            }
-          }
-        };
-
-        observer = new MutationObserver((mutations) => {
-          const elementsToProcess = new Set();
-          for (const mutation of mutations) {
-            if (mutation.type === 'childList') {
-              const target = mutation.target;
-              if (target.nodeType === Node.ELEMENT_NODE && target.classList.contains('lucide')) {
-                elementsToProcess.add(target);
-              }
-              mutation.addedNodes.forEach((node) => {
-                if (node.nodeType === Node.ELEMENT_NODE) {
-                  if (node.classList.contains('lucide')) {
-                    elementsToProcess.add(node);
-                  }
-                  node.querySelectorAll('.lucide').forEach(el => elementsToProcess.add(el));
-                } else if (node.nodeType === Node.TEXT_NODE) {
-                  const parent = node.parentElement;
-                  if (parent && parent.classList.contains('lucide')) {
-                    elementsToProcess.add(parent);
-                  }
-                }
-              });
-            } else if (mutation.type === 'characterData') {
-              const parent = mutation.target.parentElement;
-              if (parent && parent.classList.contains('lucide')) {
-                elementsToProcess.add(parent);
-              }
-            }
-          }
-          if (elementsToProcess.size > 0) {
-            elementsToProcess.forEach(processIconElement);
-          }
-        });
-
-        observer.observe(document.documentElement, {
-          childList: true,
-          subtree: true,
-          characterData: true
-        });
-
-        const init = () => {
-          document.querySelectorAll('.lucide').forEach(processIconElement);
-        };
-        if (document.readyState === 'loading') {
-          document.addEventListener('DOMContentLoaded', init);
-        } else {
-          init();
-        }
-      })();
-    </script>
     ${buildStyles({
       inter400Url,
       inter500Url,
       inter600Url,
       inter700Url,
       inter800Url,
-      lucideUrl,
-      lucideCss,
       wallpaperDataUrl
     })}
   </head>
@@ -297,32 +164,67 @@ export const buildHtml = ({
 
       <section id="workspace-view" class="view hidden">
         <div class="workspace-shell">
+          <div id="chat-audio-top-player" class="chat-audio-top-player header-player" aria-hidden="true">
+            <div class="chat-audio-top-inner header-player-content">
+              <button id="chat-audio-top-prev" class="chat-audio-top-btn header-player-button" type="button" aria-label="Rewind 10 seconds">
+                ${getIconHtml("fast_rewind", "", "aria-hidden=\"true\"")}
+              </button>
+              <button id="chat-audio-top-toggle" class="chat-audio-top-btn header-player-button" type="button" aria-label="Pause">
+                ${getIconHtml("pause", "", "id=\"chat-audio-top-toggle-icon\" aria-hidden=\"true\"")}
+              </button>
+              <button id="chat-audio-top-next" class="chat-audio-top-btn header-player-button" type="button" aria-label="Forward 10 seconds">
+                ${getIconHtml("fast_forward", "", "aria-hidden=\"true\"")}
+              </button>
+              <div class="chat-audio-top-copy header-player-title">
+                <div id="chat-audio-top-title" class="chat-audio-top-title">Audio</div>
+                <div id="chat-audio-top-meta" class="chat-audio-top-meta header-player-time">0:00 · Unknown artist</div>
+              </div>
+              <div class="chat-audio-top-volume-wrap">
+                <button id="chat-audio-top-volume" class="chat-audio-top-btn" type="button" aria-label="Mute or unmute">
+                  ${getIconHtml("volume_up", "", "id=\"chat-audio-top-volume-icon\" aria-hidden=\"true\"")}
+                </button>
+                <div id="chat-audio-top-volume-popover" class="chat-audio-top-volume-popover" aria-hidden="true">
+                  <input id="chat-audio-top-volume-range" class="chat-audio-top-volume-range" type="range" min="0" max="1" step="0.01" value="1" aria-label="Volume" />
+                </div>
+              </div>
+              <button id="chat-audio-top-speed" class="chat-audio-top-speed" type="button" aria-label="Playback speed">1X</button>
+              <button id="chat-audio-top-repeat" class="chat-audio-top-repeat" type="button" aria-label="Repeat">
+                ${getIconHtml("repeat", "", "aria-hidden=\"true\"")}
+              </button>
+              <button id="chat-audio-top-close" class="chat-audio-top-btn" type="button" aria-label="Stop and close player">
+                ${getIconHtml("close", "", "aria-hidden=\"true\"")}
+              </button>
+            </div>
+            <div id="chat-audio-top-progress" class="chat-audio-top-progress" aria-hidden="true">
+              <span id="chat-audio-top-progress-fill" class="chat-audio-top-progress-fill"></span>
+            </div>
+          </div>
           <aside class="workspace-sidebar">
             <div id="sidebar-resize-handle" class="sidebar-resize-handle" aria-hidden="true"></div>
             <div class="workspace-brand">
               <div class="workspace-brand-leading">
                 <button id="sidebar-menu-button" class="workspace-brand-menu" type="button" aria-label="Sidebar menu">
-                  <span class="lucide" aria-hidden="true">menu</span>
+                  ${getIconHtml("menu", "", "aria-hidden=\"true\"")}
                 </button>
                 <h1>TheGrapht</h1>
               </div>
               <button id="sidebar-compose-fab" class="workspace-brand-menu" type="button" aria-label="Open compose menu">
-                <span class="lucide" aria-hidden="true">edit</span>
+                ${getIconHtml("edit", "", "aria-hidden=\"true\"")}
               </button>
             </div>
             <div id="sidebar-glass-menu" class="sidebar-glass-menu" aria-hidden="true">
               <div class="sidebar-glass-menu-items">
                 <button id="sidebar-menu-profile" class="sidebar-glass-menu-item" type="button">
-                  <span class="lucide" aria-hidden="true">person</span>
+                  ${getIconHtml("person", "", "aria-hidden=\"true\"")}
                   <span>Profile</span>
                 </button>
                 <button id="sidebar-menu-saved" class="sidebar-glass-menu-item" type="button">
-                  <span class="lucide" aria-hidden="true">bookmark</span>
+                  ${getIconHtml("bookmark", "", "aria-hidden=\"true\"")}
                   <span>Saved Messages</span>
                 </button>
                 <hr class="sidebar-glass-menu-sep" />
                 <button id="sidebar-menu-logout" class="sidebar-glass-menu-item" type="button">
-                  <span class="lucide" aria-hidden="true">logout</span>
+                  ${getIconHtml("logout", "", "aria-hidden=\"true\"")}
                   <span>Log out</span>
                 </button>
               </div>
@@ -343,8 +245,8 @@ export const buildHtml = ({
 
             <!-- TheGraphT Chat AI Button (M3 Style) -->
             <div class="sidebar-ai-fab-container">
-              <button id="sidebar-ai-button" class="sidebar-ai-button" type="button" aria-label="TheGraphT Chat">
-                <span class="lucide" aria-hidden="true">auto_awesome</span>
+              <button id="sidebar-ai-button" class="sidebar-ai-button disabled" type="button" aria-label="TheGraphT Chat" disabled data-default-label="TheGraphT Chat">
+                ${getIconHtml("auto_awesome", "sidebar-ai-button-icon", "aria-hidden=\"true\"")}
               </button>
               <div class="sidebar-ai-tooltip" aria-hidden="true">TheGraphT Chat</div>
             </div>
@@ -353,32 +255,32 @@ export const buildHtml = ({
             <div id="sidebar-ai-panel" class="sidebar-ai-panel" aria-hidden="true">
               <header class="sidebar-ai-header" style="position: relative;">
                 <div class="sidebar-ai-title-wrap" id="sidebar-ai-model-selector-btn" style="cursor: pointer; user-select: none;">
-                  <span class="lucide sidebar-ai-header-stars" aria-hidden="true" id="sidebar-ai-selected-model-icon">auto_awesome</span>
+                  ${getIconHtml("auto_awesome", "sidebar-ai-header-stars", "aria-hidden=\"true\" id=\"sidebar-ai-selected-model-icon\"")}
                   <div class="sidebar-ai-header-copy" style="display: flex; align-items: center; gap: 4px;">
                     <strong class="sidebar-ai-title" id="sidebar-ai-selected-model-name">TheGraphT Chat (Base)</strong>
-                    <span class="lucide" style="font-size: 18px; opacity: 0.7; transition: transform 0.2s ease;" id="sidebar-ai-selector-chevron">keyboard_arrow_down</span>
+                    ${getIconHtml("keyboard_arrow_down", "", "style=\"font-size: 18px; opacity: 0.7; transition: transform 0.2s ease;\" id=\"sidebar-ai-selector-chevron\"")}
                   </div>
                 </div>
                 <button id="sidebar-ai-close" class="sidebar-ai-close" type="button" aria-label="Close AI chat">
-                  <span class="lucide" aria-hidden="true">close</span>
+                  ${getIconHtml("close", "", "aria-hidden=\"true\"")}
                 </button>
                 
                 <!-- Model Selector Dropdown Menu (Material M3 Glassmorphism Style) -->
                 <div id="sidebar-ai-model-menu" class="sidebar-ai-model-menu" aria-hidden="true">
                   <div class="sidebar-ai-model-menu-item active" data-model="base">
-                    <span class="lucide sidebar-ai-model-icon" aria-hidden="true">mode_fan</span>
+                    ${getIconHtml("mode_fan", "sidebar-ai-model-icon", "aria-hidden=\"true\"")}
                     <div class="sidebar-ai-model-info">
                       <div class="sidebar-ai-model-name">TheGraphT Chat (Base)</div>
                       <div class="sidebar-ai-model-desc">Отлично подходит для повседневных задач</div>
                     </div>
-                    <span class="lucide sidebar-ai-model-check" aria-hidden="true" id="sidebar-ai-check-base">check</span>
+                    ${getIconHtml("check", "sidebar-ai-model-check", "aria-hidden=\"true\" id=\"sidebar-ai-check-base\"")}
                   </div>
                   <div class="sidebar-ai-model-menu-item" data-model="pro" style="opacity: 0.8;">
-                    <span class="lucide sidebar-ai-model-icon pro" aria-hidden="true">auto_awesome</span>
+                    ${getIconHtml("auto_awesome", "sidebar-ai-model-icon pro", "aria-hidden=\"true\"")}
                     <div class="sidebar-ai-model-info">
                       <div class="sidebar-ai-model-name" style="display: flex; align-items: center; gap: 6px;">
                         TheGraphT Chat Pro
-                        <span class="lucide" style="font-size: 15px; color: #a5b4fc;">lock</span>
+                        ${getIconHtml("lock", "", "style=\"font-size: 15px; color: #a5b4fc;\"")}
                       </div>
                       <div class="sidebar-ai-model-desc">Gemini Pro (доступно с 15 июня)</div>
                     </div>
@@ -389,7 +291,7 @@ export const buildHtml = ({
               <div id="sidebar-ai-messages" class="sidebar-ai-messages">
                 <div class="sidebar-ai-welcome">
                   <div class="sidebar-ai-welcome-stars">
-                    <span class="lucide" aria-hidden="true">auto_awesome</span>
+                    ${getIconHtml("auto_awesome", "", "aria-hidden=\"true\"")}
                   </div>
                   <h3>TheGraphT Chat</h3>
                   <p>Your personal AI assistant built into TheGraphT messenger. Ask me anything or let me analyze your conversations.</p>
@@ -414,7 +316,7 @@ export const buildHtml = ({
                 <div class="sidebar-ai-input-wrap">
                   <textarea id="sidebar-ai-input" rows="1" placeholder="Message TheGraphT Chat..." autocomplete="off"></textarea>
                   <button id="sidebar-ai-send" class="sidebar-ai-send" type="button" aria-label="Send">
-                    <span class="lucide" aria-hidden="true">arrow_upward</span>
+                    ${getIconHtml("arrow_upward", "", "aria-hidden=\"true\"")}
                   </button>
                 </div>
               </div>
@@ -422,15 +324,15 @@ export const buildHtml = ({
 
             <div id="sidebar-compose-menu" class="sidebar-compose-menu" aria-hidden="true">
               <button id="sidebar-compose-channel" class="sidebar-compose-menu-item is-disabled" type="button" aria-disabled="true" tabindex="-1">
-                <span class="lucide" aria-hidden="true">campaign</span>
+                ${getIconHtml("campaign", "", "aria-hidden=\"true\"")}
                 <span>New Channel</span>
               </button>
               <button id="sidebar-compose-group" class="sidebar-compose-menu-item" type="button">
-                <span class="lucide" aria-hidden="true">groups</span>
+                ${getIconHtml("groups", "", "aria-hidden=\"true\"")}
                 <span>New Group</span>
               </button>
               <button id="sidebar-compose-private" class="sidebar-compose-menu-item" type="button">
-                <span class="lucide" aria-hidden="true">lock</span>
+                ${getIconHtml("lock", "", "aria-hidden=\"true\"")}
                 <span>New Secret Chat</span>
               </button>
             </div>
@@ -438,7 +340,7 @@ export const buildHtml = ({
               <div id="group-create-step-members" class="group-create-step group-create-step-members">
                 <header class="group-create-header">
                   <button id="group-create-close" class="group-create-back" type="button" aria-label="Close Add Members">
-                    <span class="lucide" aria-hidden="true">arrow_back</span>
+                    ${getIconHtml("arrow_back", "", "aria-hidden=\"true\"")}
                   </button>
                   <div class="group-create-title-wrap">
                     <strong id="group-create-step-members-title" class="group-create-title">Add Members</strong>
@@ -453,7 +355,7 @@ export const buildHtml = ({
               <div id="group-create-step-details" class="group-create-step group-create-step-details" aria-hidden="true">
                 <header class="group-create-header">
                   <button id="group-create-details-back" class="group-create-back" type="button" aria-label="Back to Add Members">
-                    <span class="lucide" aria-hidden="true">arrow_back</span>
+                    ${getIconHtml("arrow_back", "", "aria-hidden=\"true\"")}
                   </button>
                   <div class="group-create-title-wrap">
                     <strong class="group-create-title">New Group</strong>
@@ -462,7 +364,7 @@ export const buildHtml = ({
                 <div class="group-details-body">
                   <div class="group-details-photo-row">
                     <button id="group-create-photo-button" class="group-create-photo-button" type="button" aria-label="Add group photo">
-                      <span class="lucide" aria-hidden="true">add_a_photo</span>
+                      ${getIconHtml("add_a_photo", "", "aria-hidden=\"true\"")}
                       <img id="group-create-photo-preview" class="group-create-photo-preview" alt="Group photo preview" />
                     </button>
                     <input id="group-create-photo-input" type="file" accept="image/*" hidden />
@@ -476,7 +378,7 @@ export const buildHtml = ({
                 </div>
               </div>
               <button id="group-create-next" class="group-create-next" type="button" aria-label="Next step">
-                <span class="lucide" aria-hidden="true">arrow_forward</span>
+                ${getIconHtml("arrow_forward", "", "aria-hidden=\"true\"")}
               </button>
             </aside>
 
@@ -484,14 +386,14 @@ export const buildHtml = ({
             <aside id="sidebar-profile-panel" class="sidebar-profile-panel" aria-hidden="true">
               <header class="sidebar-profile-header">
                 <button id="sidebar-profile-back" class="sidebar-profile-back" type="button" aria-label="Close Profile">
-                  <span class="lucide" aria-hidden="true">arrow_back</span>
+                  ${getIconHtml("arrow_back", "", "aria-hidden=\"true\"")}
                 </button>
                 <strong class="sidebar-profile-title">Settings</strong>
                 <button class="sidebar-profile-edit" type="button" aria-label="Edit profile">
-                  <span class="lucide" aria-hidden="true">edit</span>
+                  ${getIconHtml("edit", "", "aria-hidden=\"true\"")}
                 </button>
                 <button class="sidebar-profile-more" type="button" aria-label="More options">
-                  <span class="lucide" aria-hidden="true">more_vert</span>
+                  ${getIconHtml("more_vert", "", "aria-hidden=\"true\"")}
                 </button>
               </header>
 
@@ -508,7 +410,7 @@ export const buildHtml = ({
                 <!-- Info Block -->
                 <div class="sidebar-profile-info-block">
                   <div class="sidebar-profile-info-row">
-                    <span class="lucide sidebar-profile-info-icon" aria-hidden="true">alternate_email</span>
+                    ${getIconHtml("alternate_email", "sidebar-profile-info-icon", "aria-hidden=\"true\"")}
                     <div class="sidebar-profile-info-content">
                       <p id="sidebar-profile-username" class="sidebar-profile-info-value"></p>
                       <p class="sidebar-profile-info-label">Username</p>
@@ -519,46 +421,46 @@ export const buildHtml = ({
                 <!-- Settings Menu -->
                 <div class="sidebar-profile-settings-block">
                   <button class="sidebar-profile-setting-row" type="button">
-                    <span class="lucide sidebar-profile-setting-icon" aria-hidden="true">notifications</span>
+                    ${getIconHtml("notifications", "sidebar-profile-setting-icon", "aria-hidden=\"true\"")}
                     <span class="sidebar-profile-setting-label">Notifications and Sounds</span>
-                    <span class="lucide sidebar-profile-setting-arrow" aria-hidden="true">chevron_right</span>
+                    ${getIconHtml("chevron_right", "sidebar-profile-setting-arrow", "aria-hidden=\"true\"")}
                   </button>
                   <button class="sidebar-profile-setting-row" type="button">
-                    <span class="lucide sidebar-profile-setting-icon" aria-hidden="true">storage</span>
+                    ${getIconHtml("storage", "sidebar-profile-setting-icon", "aria-hidden=\"true\"")}
                     <span class="sidebar-profile-setting-label">Data and Storage</span>
-                    <span class="lucide sidebar-profile-setting-arrow" aria-hidden="true">chevron_right</span>
+                    ${getIconHtml("chevron_right", "sidebar-profile-setting-arrow", "aria-hidden=\"true\"")}
                   </button>
                   <button class="sidebar-profile-setting-row" type="button">
-                    <span class="lucide sidebar-profile-setting-icon" aria-hidden="true">lock</span>
+                    ${getIconHtml("lock", "sidebar-profile-setting-icon", "aria-hidden=\"true\"")}
                     <span class="sidebar-profile-setting-label">Privacy and Security</span>
-                    <span class="lucide sidebar-profile-setting-arrow" aria-hidden="true">chevron_right</span>
+                    ${getIconHtml("chevron_right", "sidebar-profile-setting-arrow", "aria-hidden=\"true\"")}
                   </button>
                   <button class="sidebar-profile-setting-row" type="button">
-                    <span class="lucide sidebar-profile-setting-icon" aria-hidden="true">settings</span>
+                    ${getIconHtml("settings", "sidebar-profile-setting-icon", "aria-hidden=\"true\"")}
                     <span class="sidebar-profile-setting-label">General Settings</span>
-                    <span class="lucide sidebar-profile-setting-arrow" aria-hidden="true">chevron_right</span>
+                    ${getIconHtml("chevron_right", "sidebar-profile-setting-arrow", "aria-hidden=\"true\"")}
                   </button>
                   <button class="sidebar-profile-setting-row" type="button">
-                    <span class="lucide sidebar-profile-setting-icon" aria-hidden="true">folder</span>
+                    ${getIconHtml("folder", "sidebar-profile-setting-icon", "aria-hidden=\"true\"")}
                     <span class="sidebar-profile-setting-label">Chat Folders</span>
-                    <span class="lucide sidebar-profile-setting-arrow" aria-hidden="true">chevron_right</span>
+                    ${getIconHtml("chevron_right", "sidebar-profile-setting-arrow", "aria-hidden=\"true\"")}
                   </button>
                   <button class="sidebar-profile-setting-row" type="button">
-                    <span class="lucide sidebar-profile-setting-icon" aria-hidden="true">mood</span>
+                    ${getIconHtml("mood", "sidebar-profile-setting-icon", "aria-hidden=\"true\"")}
                     <span class="sidebar-profile-setting-label">Stickers and Emoji</span>
-                    <span class="lucide sidebar-profile-setting-arrow" aria-hidden="true">chevron_right</span>
+                    ${getIconHtml("chevron_right", "sidebar-profile-setting-arrow", "aria-hidden=\"true\"")}
                   </button>
                   <button class="sidebar-profile-setting-row" type="button">
-                    <span class="lucide sidebar-profile-setting-icon" aria-hidden="true">devices</span>
+                    ${getIconHtml("devices", "sidebar-profile-setting-icon", "aria-hidden=\"true\"")}
                     <span class="sidebar-profile-setting-label">Devices</span>
                     <span class="sidebar-profile-device-badge">11</span>
-                    <span class="lucide sidebar-profile-setting-arrow" aria-hidden="true">chevron_right</span>
+                    ${getIconHtml("chevron_right", "sidebar-profile-setting-arrow", "aria-hidden=\"true\"")}
                   </button>
                   <button class="sidebar-profile-setting-row" type="button">
-                    <span class="lucide sidebar-profile-setting-icon" aria-hidden="true">translate</span>
+                    ${getIconHtml("translate", "sidebar-profile-setting-icon", "aria-hidden=\"true\"")}
                     <span class="sidebar-profile-setting-label">Language</span>
                     <span class="sidebar-profile-setting-value">English</span>
-                    <span class="lucide sidebar-profile-setting-arrow" aria-hidden="true">chevron_right</span>
+                    ${getIconHtml("chevron_right", "sidebar-profile-setting-arrow", "aria-hidden=\"true\"")}
                   </button>
                 </div>
 
@@ -566,10 +468,10 @@ export const buildHtml = ({
                 <div class="sidebar-profile-premium-block">
                   <button class="sidebar-profile-premium-row" type="button">
                     <span class="sidebar-profile-premium-icon-wrap" aria-hidden="true">
-                      <span class="lucide" aria-hidden="true">star</span>
+                      ${getIconHtml("star", "", "aria-hidden=\"true\"")}
                     </span>
                     <span class="sidebar-profile-premium-label">TheGraphT Premium</span>
-                    <span class="lucide sidebar-profile-setting-arrow" aria-hidden="true">chevron_right</span>
+                    ${getIconHtml("chevron_right", "sidebar-profile-setting-arrow", "aria-hidden=\"true\"")}
                   </button>
                 </div>
               </div>
@@ -628,7 +530,7 @@ export const buildHtml = ({
                     <input id="chat-search-input" class="chat-search-input" type="text" placeholder="Search" />
                   </div>
                   <button id="chat-search-close" class="chat-search-close" type="button" aria-label="Close search">
-                    <span class="lucide" aria-hidden="true">close</span>
+                    ${getIconHtml("close", "", "aria-hidden=\"true\"")}
                   </button>
                 </div>
                 <div id="chat-search-results" class="chat-search-results"></div>
@@ -643,48 +545,13 @@ export const buildHtml = ({
               <button id="group-call-banner" class="group-call-banner" type="button" aria-hidden="true" hidden>
                 <span id="group-call-banner-state" class="group-call-banner-state">Connecting...</span>
                 <span id="group-call-banner-title" class="group-call-banner-title">Group video chat</span>
-                <span class="lucide" aria-hidden="true">call_end</span>
+                ${getIconHtml("call_end", "", "aria-hidden=\"true\"")}
               </button>
-              <div id="chat-audio-top-player" class="chat-audio-top-player header-player" aria-hidden="true">
-                <div class="chat-audio-top-inner header-player-content">
-                  <button id="chat-audio-top-prev" class="chat-audio-top-btn header-player-button" type="button" aria-label="Rewind 10 seconds">
-                    <span class="lucide" aria-hidden="true">fast_rewind</span>
-                  </button>
-                  <button id="chat-audio-top-toggle" class="chat-audio-top-btn header-player-button" type="button" aria-label="Pause">
-                    <span id="chat-audio-top-toggle-icon" class="lucide" aria-hidden="true">pause</span>
-                  </button>
-                  <button id="chat-audio-top-next" class="chat-audio-top-btn header-player-button" type="button" aria-label="Forward 10 seconds">
-                    <span class="lucide" aria-hidden="true">fast_forward</span>
-                  </button>
-                  <div class="chat-audio-top-copy header-player-title">
-                    <div id="chat-audio-top-title" class="chat-audio-top-title">Audio</div>
-                    <div id="chat-audio-top-meta" class="chat-audio-top-meta header-player-time">0:00 · Unknown artist</div>
-                  </div>
-                  <div class="chat-audio-top-volume-wrap">
-                    <button id="chat-audio-top-volume" class="chat-audio-top-btn" type="button" aria-label="Mute or unmute">
-                      <span id="chat-audio-top-volume-icon" class="lucide" aria-hidden="true">volume_up</span>
-                    </button>
-                    <div id="chat-audio-top-volume-popover" class="chat-audio-top-volume-popover" aria-hidden="true">
-                      <input id="chat-audio-top-volume-range" class="chat-audio-top-volume-range" type="range" min="0" max="1" step="0.01" value="1" aria-label="Volume" />
-                    </div>
-                  </div>
-                  <button id="chat-audio-top-speed" class="chat-audio-top-speed" type="button" aria-label="Playback speed">1X</button>
-                  <button id="chat-audio-top-repeat" class="chat-audio-top-repeat" type="button" aria-label="Repeat">
-                    <span class="lucide" aria-hidden="true">repeat</span>
-                  </button>
-                  <button id="chat-audio-top-close" class="chat-audio-top-btn" type="button" aria-label="Stop and close player">
-                    <span class="lucide" aria-hidden="true">close</span>
-                  </button>
-                </div>
-                <div id="chat-audio-top-progress" class="chat-audio-top-progress" aria-hidden="true">
-                  <span id="chat-audio-top-progress-fill" class="chat-audio-top-progress-fill"></span>
-                </div>
-              </div>
               <aside id="chat-profile-panel" class="chat-profile-panel" aria-hidden="true">
                 <div class="chat-profile-panel-header">
                   <span class="chat-profile-panel-title">Info</span>
                   <button id="chat-profile-close" class="chat-profile-panel-close" type="button" aria-label="Close profile">
-                    <span class="lucide" aria-hidden="true">close</span>
+                    ${getIconHtml("close", "", "aria-hidden=\"true\"")}
                   </button>
                 </div>
                 <div class="chat-profile-panel-body">
@@ -716,11 +583,12 @@ export const buildHtml = ({
                 </div>
                 <div id="message-list" class="message-list"></div>
                 <button id="chat-scroll-bottom" class="chat-scroll-bottom" type="button" aria-label="Scroll down">
-                  <span class="lucide" aria-hidden="true">south</span>
+                  ${getIconHtml("south", "", "aria-hidden=\"true\"")}
                 </button>
 ${buildComposerMarkup({
   emojiIconDataUrl,
-  settingsKeyboardIconDataUrl
+  settingsKeyboardIconDataUrl,
+  getIconHtml
 })}
               </div>
               <div id="call-overlay" class="call-overlay" aria-hidden="true">
@@ -729,10 +597,10 @@ ${buildComposerMarkup({
                   <span id="call-group-kicker" class="call-group-kicker" aria-hidden="true" hidden>Group video chat</span>
                   <div class="tg-call-window-actions">
                     <button id="call-expand-button" class="call-icon-button tg-call-window-button" type="button" aria-label="Toggle fullscreen">
-                      <span class="lucide" aria-hidden="true">open_in_full</span>
+                      ${getIconHtml("open_in_full", "", "aria-hidden=\"true\"")}
                     </button>
                     <button id="call-close-button" class="call-icon-button tg-call-window-button" type="button" aria-label="Close call">
-                      <span class="lucide" aria-hidden="true">close</span>
+                      ${getIconHtml("close", "", "aria-hidden=\"true\"")}
                     </button>
                   </div>
                   <div id="call-participants-grid" class="call-participants-grid" aria-label="Call participants"></div>
@@ -757,31 +625,31 @@ ${buildComposerMarkup({
                   <div class="call-actions tg-call-actions">
                     <div class="call-action">
                       <button id="call-video-button" class="call-action-button tg-call-action-button btn-camera" type="button" aria-label="Toggle camera">
-                        <span class="lucide" aria-hidden="true">videocam_off</span>
+                        ${getIconHtml("videocam_off", "", "aria-hidden=\"true\"")}
                       </button>
                       <span id="call-video-label" class="call-action-label">Camera</span>
                     </div>
                     <div class="call-action">
                       <button id="call-screen-button" class="call-action-button tg-call-action-button btn-screen" type="button" aria-label="Share screen">
-                        <span class="lucide" aria-hidden="true">screen_share</span>
+                        ${getIconHtml("screen_share", "", "aria-hidden=\"true\"")}
                       </button>
                       <span id="call-screen-label" class="call-action-label">Screen</span>
                     </div>
                     <div class="call-action">
                       <button id="call-mute-button" class="call-action-button tg-call-action-button btn-mute" type="button" aria-label="Mute microphone">
-                        <span class="lucide" aria-hidden="true">mic</span>
+                        ${getIconHtml("mic", "", "aria-hidden=\"true\"")}
                       </button>
                       <span id="call-mute-label" class="call-action-label">Mute</span>
                     </div>
                     <div id="call-accept-wrap" class="call-action" hidden>
                       <button id="call-accept-button" class="call-action-button tg-call-action-button accept" type="button" aria-label="Accept call">
-                        <span class="lucide" aria-hidden="true">call</span>
+                        ${getIconHtml("call", "", "aria-hidden=\"true\"")}
                       </button>
                       <span class="call-action-label">Accept</span>
                     </div>
                     <div class="call-action">
                       <button id="call-end-button" class="call-action-button tg-call-action-button end btn-end" type="button" aria-label="End call">
-                        <span class="lucide" aria-hidden="true">call_end</span>
+                        ${getIconHtml("call_end", "", "aria-hidden=\"true\"")}
                       </button>
                       <span id="call-end-label" class="call-action-label">Decline</span>
                     </div>
@@ -791,7 +659,7 @@ ${buildComposerMarkup({
                     <div class="call-devices-header">
                       <div class="call-devices-title">Call audio devices</div>
                       <button id="call-devices-close" class="call-icon-button" type="button" aria-label="Close devices panel">
-                        <span class="lucide" aria-hidden="true">close</span>
+                        ${getIconHtml("close", "", "aria-hidden=\"true\"")}
                       </button>
                     </div>
                     <div class="call-device-field">
@@ -812,7 +680,7 @@ ${buildComposerMarkup({
                       <div id="call-mini-subtitle" class="call-mini-subtitle">connecting...</div>
                     </div>
                     <button id="call-mini-close" class="call-icon-button" type="button" aria-label="Close mini call">
-                      <span class="lucide" aria-hidden="true">close</span>
+                      ${getIconHtml("close", "", "aria-hidden=\"true\"")}
                     </button>
                   </div>
                   <div class="call-mini-cover">
@@ -825,10 +693,10 @@ ${buildComposerMarkup({
                   </div>
                   <div class="call-mini-actions">
                     <button id="call-mini-open" class="call-icon-button" type="button" aria-label="Open call">
-                      <span class="lucide" aria-hidden="true">open_in_full</span>
+                      ${getIconHtml("open_in_full", "", "aria-hidden=\"true\"")}
                     </button>
                     <button id="call-mini-end" class="call-icon-button" type="button" aria-label="End call">
-                      <span class="lucide" aria-hidden="true">call_end</span>
+                      ${getIconHtml("call_end", "", "aria-hidden=\"true\"")}
                     </button>
                   </div>
                 </div>
@@ -937,6 +805,106 @@ ${buildComposerMarkup({
       </div>
     </div>
     <div id="toast-stack" class="toast-stack" aria-live="polite" aria-atomic="true"></div>
+    <div id="preact-root"></div>
+    <script>
+      (() => {
+        if (!window.tgDesktop) {
+          return;
+        }
+        const container = document.querySelector('.sidebar-ai-fab-container');
+        const button = document.getElementById('sidebar-ai-button');
+        const tooltip = document.querySelector('.sidebar-ai-tooltip');
+        if (!(container instanceof HTMLElement) || !(button instanceof HTMLButtonElement)) {
+          return;
+        }
+
+        const getDownloadIconHtml = function(percent, isBusy) {
+          var dashOffset = 100 - percent;
+          return '<svg class="sidebar-ai-button-icon-svg" xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 36 36" style="display: block; transform: rotate(-90deg);">' +
+            '<defs>' +
+              '<linearGradient id="update-grad" x1="0%" y1="0%" x2="100%" y2="100%">' +
+                '<stop offset="0%" stop-color="#818cf8" />' +
+                '<stop offset="100%" stop-color="#c084fc" />' +
+              '</linearGradient>' +
+            '</defs>' +
+            '<path d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" fill="none" stroke="rgba(255, 255, 255, 0.08)" stroke-width="2.5" />' +
+            '<path d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" fill="none" stroke="' + (isBusy ? 'url(#update-grad)' : 'rgba(255, 255, 255, 0.3)') + '" stroke-width="3" stroke-dasharray="100, 100" stroke-dashoffset="' + dashOffset + '" stroke-linecap="round" style="transition: stroke-dashoffset 0.15s ease;" />' +
+            '<g transform="translate(6, 6)" stroke="currentColor" stroke-width="2.2" fill="none" stroke-linecap="round" stroke-linejoin="round">' +
+              '<path d="M12 3v12" />' +
+              '<path d="m7 10 5 5 5-5" />' +
+              '<path d="M5 21h14" />' +
+            '</g>' +
+          '</svg>';
+        };
+        const applyUpdateMode = (state) => {
+          const updateStatus = String(state?.status || '');
+          const isBusy = updateStatus === 'downloading' || updateStatus === 'installing';
+          const isAvailable = updateStatus === 'available' || updateStatus === 'current' || updateStatus === 'idle' || updateStatus === 'error' || updateStatus === 'cancelled';
+          if (!isAvailable && !isBusy) {
+            return;
+          }
+          container.classList.add('update-mode');
+          button.classList.add('update-mode');
+          button.classList.toggle('is-busy', isBusy);
+          button.classList.remove('disabled');
+          button.disabled = false;
+          button.innerHTML = '';
+          const iconWrap = document.createElement('span');
+          iconWrap.className = 'sidebar-ai-button-icon';
+          const percentVal = Math.max(0, Math.min(100, Number(state?.progress || 0)));
+          iconWrap.innerHTML = getDownloadIconHtml(percentVal, isBusy);
+          const copy = document.createElement('span');
+          copy.className = 'sidebar-ai-button-copy';
+          const title = document.createElement('span');
+          title.className = 'sidebar-ai-button-title';
+          title.textContent = isBusy ? 'Updating' : 'Update';
+          const subtitle = document.createElement('span');
+          subtitle.className = 'sidebar-ai-button-subtitle';
+          subtitle.textContent = isBusy ? (Math.max(0, Math.min(100, Number(state?.progress || 0))) + '%') : ('Version ' + String(state?.version || '').replace(/^v/i, ''));
+          const action = document.createElement('span');
+          action.className = 'sidebar-ai-button-action';
+          action.textContent = isBusy ? 'Cancel' : 'Update';
+          copy.appendChild(title);
+          copy.appendChild(subtitle);
+          button.appendChild(iconWrap);
+          button.appendChild(copy);
+          button.appendChild(action);
+          if (tooltip instanceof HTMLElement) {
+            tooltip.style.display = 'none';
+          }
+          button.onclick = () => {
+            if (button.dataset.busy === '1') {
+              window.tgDesktop.window.cancelUpdate();
+              return;
+            }
+            window.tgDesktop.window.updateApp();
+          };
+          button.dataset.busy = isBusy ? '1' : '0';
+        };
+
+        const blockRefresh = (event) => {
+          const key = String(event.key || '').toLowerCase();
+          if (key === 'f5' || ((event.ctrlKey || event.metaKey) && key === 'r') || ((event.ctrlKey || event.metaKey) && key === 'f5')) {
+            event.preventDefault();
+            event.stopPropagation();
+          }
+        };
+        window.addEventListener('keydown', blockRefresh, true);
+
+        if (window.tgDesktop.onUpdateState) {
+          window.tgDesktop.onUpdateState((state) => {
+            if (state?.status === 'available' || state?.status === 'downloading' || state?.status === 'installing' || state?.status === 'error' || state?.status === 'cancelled') {
+              applyUpdateMode(state);
+            }
+          });
+        }
+        if (window.tgDesktop.onUpdateProgress) {
+          window.tgDesktop.onUpdateProgress((progress) => {
+            applyUpdateMode({ status: 'downloading', progress });
+          });
+        }
+      })();
+    </script>
     <script src="${clientScriptUrl}" defer></script>
   </body>
 </html>`;

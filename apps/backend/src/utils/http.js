@@ -40,6 +40,9 @@ export const hasTrustedOrigin = (request) => {
 const hasCookieCredentials = (request) => Boolean(request.headers.cookie);
 
 export const hasTrustedBrowserOrigin = (request) => {
+  if (request.headers["x-thegrapht-client"] === "android") {
+    return true;
+  }
   if (request.headers.origin) {
     return isAllowedOrigin(request.headers.origin);
   }

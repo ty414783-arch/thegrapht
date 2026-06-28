@@ -8,6 +8,79 @@ const DEV_SERVER_URL = process.env.TG_DESKTOP_DEV_URL || 'http://127.0.0.1:5173'
 let mainWindow = null;
 let tray = null;
 let isQuitting = false;
+let latestUpdateInfo = null;
+let activeUpdateRequest = null;
+let latestUpdateState = null;
+
+const semverParts = (value) => String(value || '').trim().replace(/^v/i, '').split('.').map((part) => {
+  const parsed = parseInt(part, 10);
+  return Number.isFinite(parsed) ? parsed : 0;
+});
+
+const isVersionNewer = (current, latest) => {
+  const currentParts = semverParts(current);
+  const latestParts = semverParts(latest);
+  const length = Math.max(currentParts.length, latestParts.length);
+  for (let index = 0; index < length; index += 1) {
+    const currentPart = currentParts[index] || 0;
+    const latestPart = latestParts[index] || 0;
+    if (latestPart > currentPart) return true;
+    if (latestPart < currentPart) return false;
+  }
+  return false;
+};
+
+const sendUpdateState = (payload) => {
+  latestUpdateState = payload || null;
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send('update:state', payload);
+  }
+};
+
+const sendUpdateProgress = (percent) => {
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send('update:progress', percent);
+  }
+};
+
+const sendUpdateError = (message) => {
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send('update:error', message);
+  }
+};
+
+const checkForUpdate = () => {
+  try {
+    const https = require('node:https');
+    const latestYmlUrl = 'https://web.thegrapht.su/download/release/desktop/latest.yml';
+    https.get(latestYmlUrl, (res) => {
+      let data = '';
+      res.on('data', (chunk) => { data += chunk; });
+      res.on('end', () => {
+        const versionMatch = data.match(/version:\s*([^\s]+)/i);
+        const pathMatch = data.match(/path:\s*([^\s]+)/i);
+        if (!versionMatch || !pathMatch) {
+          sendUpdateState({ status: 'idle' });
+          return;
+        }
+        const latestVersion = String(versionMatch[1]).trim();
+        const filename = String(pathMatch[1]).trim();
+        latestUpdateInfo = {
+          version: latestVersion,
+          filename,
+          downloadUrl: `https://web.thegrapht.su/download/release/desktop/${filename}`
+        };
+        sendUpdateState(isVersionNewer(app.getVersion(), latestVersion)
+          ? { status: 'available', version: latestVersion, currentVersion: app.getVersion() }
+          : { status: 'current', version: app.getVersion() });
+      });
+    }).on('error', () => {
+      sendUpdateState({ status: 'error', message: 'Update check failed.' });
+    });
+  } catch (error) {
+    sendUpdateState({ status: 'error', message: 'Update check failed.' });
+  }
+};
 
 // Ensure single instance lock
 const gotTheLock = app.requestSingleInstanceLock();
@@ -83,6 +156,12 @@ if (!gotTheLock) {
       }
     }
 
+    mainWindow.webContents.on('did-finish-load', () => {
+      if (latestUpdateState) {
+        mainWindow.webContents.send('update:state', latestUpdateState);
+      }
+    });
+
     mainWindow.on('close', (event) => {
       if (!isQuitting) {
         event.preventDefault();
@@ -113,6 +192,7 @@ if (!gotTheLock) {
 
   app.whenReady().then(() => {
     createWindow();
+    checkForUpdate();
 
     // Create System Tray icon
     const iconPath = path.join(__dirname, 'icon.png');
@@ -150,47 +230,113 @@ if (!gotTheLock) {
 
   ipcMain.on('window:update-app', () => {
     try {
-      const https = require('node:https');
       const child_process = require('node:child_process');
-      const latestYmlUrl = 'https://web.thegrapht.su/download/release/desktop/latest.yml';
       const tempDir = app.getPath('temp');
+      const updateInfo = latestUpdateInfo;
+      if (!updateInfo?.downloadUrl || !updateInfo?.filename) {
+        checkForUpdate();
+        return;
+      }
+      const localPath = path.join(tempDir, updateInfo.filename);
 
-      https.get(latestYmlUrl, (res) => {
-        let data = '';
-        res.on('data', (chunk) => data += chunk);
-        res.on('end', () => {
-          const match = data.match(/path:\s*([^\s]+)/i) || data.match(/url:\s*([^\s]+)/i);
-          if (!match) return;
-          const filename = match[1];
-          const downloadUrl = `https://web.thegrapht.su/download/release/desktop/${filename}`;
-          const localPath = path.join(tempDir, filename);
+      const downloadFile = (url, destPath) => {
+        const https = require('node:https');
+        const fileStream = fs.createWriteStream(destPath);
 
-          const fileStream = fs.createWriteStream(localPath);
-          https.get(downloadUrl, (downloadRes) => {
-            downloadRes.pipe(fileStream);
-            fileStream.on('finish', () => {
-              fileStream.close();
+        const request = https.get(url, (res) => {
+          // Follow 301/302 redirects
+          if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
+            fileStream.close();
+            try { fs.unlinkSync(destPath); } catch (e) {}
+            const redirectUrl = new URL(res.headers.location, url).toString();
+            downloadFile(redirectUrl, destPath);
+            return;
+          }
 
-              // Spawn the installer
-              const child = child_process.spawn(localPath, [], {
-                detached: true,
-                stdio: 'ignore'
-              });
-              child.unref();
+          if (res.statusCode !== 200) {
+            fileStream.close();
+            try { fs.unlinkSync(destPath); } catch (e) {}
+            const err = new Error(`HTTP status ${res.statusCode}`);
+            activeUpdateRequest = null;
+            sendUpdateState({ status: 'error', message: err.message });
+            sendUpdateError(err.message);
+            return;
+          }
 
-              // Close the app immediately
-              isQuitting = true;
-              app.quit();
+          const totalBytes = parseInt(res.headers['content-length'] || '0', 10);
+          let receivedBytes = 0;
+
+          sendUpdateState({ status: 'downloading', version: updateInfo.version || app.getVersion(), progress: 0 });
+          sendUpdateProgress(0);
+
+          res.on('data', (chunk) => {
+            receivedBytes += chunk.length;
+            if (totalBytes > 0) {
+              const percent = Math.round((receivedBytes / totalBytes) * 100);
+              sendUpdateState({ status: 'downloading', version: updateInfo.version || app.getVersion(), progress: percent });
+              sendUpdateProgress(percent);
+            }
+          });
+
+          res.pipe(fileStream);
+
+          fileStream.on('finish', () => {
+            fileStream.close((err) => {
+              activeUpdateRequest = null;
+              if (err) {
+                console.error("Stream close error", err);
+                sendUpdateState({ status: 'error', message: 'Failed to save update.' });
+                sendUpdateError('Failed to save update.');
+                return;
+              }
+
+              sendUpdateState({ status: 'installing', version: updateInfo.version || app.getVersion(), progress: 100 });
+              sendUpdateProgress(100);
+
+              // Small delay to ensure OS releases locks before spawn
+              setTimeout(() => {
+                const child = child_process.spawn(localPath, [], {
+                  detached: true,
+                  stdio: 'ignore'
+                });
+                child.unref();
+                isQuitting = true;
+                app.quit();
+              }, 250);
             });
-          }).on('error', (err) => {
-            console.error("Download failed", err);
           });
         });
-      }).on('error', (err) => {
-        console.error("YML fetch failed", err);
-      });
+
+        request.on('error', (err) => {
+          fileStream.close();
+          try { fs.unlinkSync(destPath); } catch (e) {}
+          activeUpdateRequest = null;
+          console.error("Download failed", err);
+          sendUpdateState({ status: 'error', message: 'Download failed.' });
+          sendUpdateError('Download failed.');
+        });
+
+        activeUpdateRequest = request;
+      };
+
+      downloadFile(updateInfo.downloadUrl, localPath);
+
     } catch (error) {
       console.error("Updater failed", error);
+      sendUpdateState({ status: 'error', message: 'Updater failed.' });
+      sendUpdateError('Updater failed.');
+    }
+  });
+
+  ipcMain.on('window:cancel-update', () => {
+    if (activeUpdateRequest) {
+      activeUpdateRequest.destroy();
+      activeUpdateRequest = null;
+    }
+    sendUpdateState({ status: 'cancelled' });
+    sendUpdateState({ status: 'available', version: latestUpdateInfo?.version || app.getVersion(), progress: 0 });
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('update:cancelled');
     }
   });
 
@@ -222,5 +368,9 @@ if (!gotTheLock) {
   ipcMain.handle('window:is-maximized', () => {
     if (!mainWindow || mainWindow.isDestroyed()) return false;
     return mainWindow.isMaximized();
+  });
+
+  ipcMain.on('window:check-update', () => {
+    checkForUpdate();
   });
 }

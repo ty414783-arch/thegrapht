@@ -104,3 +104,16 @@ export function ripple(e) {
   btn.appendChild(el);
   el.addEventListener('animationend', () => el.remove(), { once: true });
 }
+
+export function emojiToAppleAssetName(emoji) {
+  const codepoints = Array.from(String(emoji || '').trim())
+    .map(ch => ch.codePointAt(0)?.toString(16))
+    .filter(Boolean)
+    .join('-');
+  return codepoints ? `${codepoints}.png` : '';
+}
+
+export function getAppleEmojiUrl(emoji, baseUrl = 'https://web.thegrapht.su/assets/emoji/apple-64/') {
+  const assetName = emojiToAppleAssetName(emoji);
+  return assetName ? `${String(baseUrl).replace(/\/+$/, '/')}${assetName}` : '';
+}

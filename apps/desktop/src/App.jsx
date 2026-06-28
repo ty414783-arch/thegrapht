@@ -54,6 +54,7 @@ export default function App() {
   const [searchQuery, setSearchQuery] = useState('');
   const [wsStatus, setWsStatus] = useState('connecting');
   const [bannerState, setBannerState] = useState('hidden'); // hidden | offline | connected
+  const [updateState, setUpdateState] = useState({ status: 'idle', progress: 0, version: '' });
   const prevWsRef = useRef('connecting');
 
   // Form states
@@ -80,6 +81,39 @@ export default function App() {
     return () => {
       wsRef.current?.disconnect();
     };
+  }, []);
+
+  useEffect(() => {
+    if (!window.tgDesktop) return;
+    const handleUpdateState = (nextState) => {
+      setUpdateState(prev => ({ ...prev, ...(nextState || {}) }));
+    };
+    const handleUpdateProgress = (progress) => {
+      setUpdateState(prev => ({ ...prev, status: 'downloading', progress: Number(progress || 0) }));
+    };
+    const handleUpdateError = (message) => {
+      setUpdateState(prev => ({ ...prev, status: 'error', message: String(message || 'Update failed.') }));
+    };
+    const handleUpdateCancelled = () => {
+      setUpdateState(prev => ({ ...prev, status: 'available', progress: 0 }));
+    };
+    window.tgDesktop.onUpdateState?.(handleUpdateState);
+    window.tgDesktop.onUpdateProgress?.(handleUpdateProgress);
+    window.tgDesktop.onUpdateError?.(handleUpdateError);
+    window.tgDesktop.onUpdateCancelled?.(handleUpdateCancelled);
+    return undefined;
+  }, []);
+
+  useEffect(() => {
+    const blockRefresh = (event) => {
+      const key = String(event.key || '').toLowerCase();
+      if (key === 'f5' || ((event.ctrlKey || event.metaKey) && key === 'r') || ((event.ctrlKey || event.metaKey) && key === 'f5')) {
+        event.preventDefault();
+        event.stopPropagation();
+      }
+    };
+    window.addEventListener('keydown', blockRefresh, true);
+    return () => window.removeEventListener('keydown', blockRefresh, true);
   }, []);
 
   /* ---------- Connection banner state machine ---------- */
@@ -516,6 +550,9 @@ export default function App() {
               onLogout={logout}
               searchQuery={searchQuery}
               onSearchChange={setSearchQuery}
+              updateState={updateState}
+              onUpdateClick={() => window.tgDesktop?.window?.updateApp?.()}
+              onCancelUpdate={() => window.tgDesktop?.window?.cancelUpdate?.()}
             />
             {activeDialog ? (
               <ChatWindow

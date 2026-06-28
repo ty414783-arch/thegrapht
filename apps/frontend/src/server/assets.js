@@ -43,8 +43,6 @@ export const inter500Url = "/assets/fonts/inter-500.ttf";
 export const inter600Url = "/assets/fonts/inter-600.ttf";
 export const inter700Url = "/assets/fonts/inter-700.ttf";
 export const inter800Url = "/assets/fonts/inter-800.ttf";
-export const lucideUrl = "/assets/fonts/lucide.ttf";
-export const lucideCss = readBuffer("fonts/lucide.css").toString("utf-8");
 export const androidAlphaApkUrl = "/downloads/thegrapht-android-alpha.apk";
 export const androidAlphaApkVersionedUrl = "/downloads/thegrapht-android-alpha-0.1.2.apk";
 
@@ -69,6 +67,5 @@ export const inter500Buffer = readBuffer("fonts/inter-500.ttf");
 export const inter600Buffer = readBuffer("fonts/inter-600.ttf");
 export const inter700Buffer = readBuffer("fonts/inter-700.ttf");
 export const inter800Buffer = readBuffer("fonts/inter-800.ttf");
-export const lucideBuffer = readBuffer("fonts/lucide.ttf");
 export const androidAlphaApkBuffer = readBuffer("downloads/thegrapht-android-alpha.apk");
 export const androidAlphaApkVersionedBuffer = readBuffer("downloads/thegrapht-android-alpha-0.1.2.apk");

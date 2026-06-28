@@ -5,7 +5,7 @@
   --border-subtle: rgba(255,255,255,0.06);
 }
 .native-titlebar {
-  height: 32px;
+  height: 38px;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -79,7 +79,7 @@
   flex: 1;
   min-height: 0;
   overflow: hidden;
-  height: calc(100vh - 32px) !important;
+  height: calc(100vh - 38px) !important;
 }
 
 
@@ -1465,6 +1465,62 @@
       .workspace-account-logout:disabled {
         opacity: 0.66;
         cursor: default;
+      }
+      .sidebar-update-banner {
+        margin: 0 4px 12px;
+      }
+      .sidebar-update-button {
+        width: 100%;
+        min-height: 62px;
+        border: 0;
+        border-radius: 20px;
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        padding: 12px 14px;
+        background: linear-gradient(135deg, rgba(90, 97, 111, 0.96) 0%, rgba(56, 61, 72, 0.96) 100%);
+        color: #eef2fb;
+        box-shadow: 0 18px 34px rgba(0, 0, 0, 0.24);
+        cursor: pointer;
+        overflow: hidden;
+      }
+      .sidebar-update-banner.is-busy .sidebar-update-button {
+        background: linear-gradient(135deg, rgba(72, 77, 89, 0.98) 0%, rgba(48, 52, 62, 0.98) 100%);
+      }
+      .sidebar-update-icon {
+        width: 32px;
+        height: 32px;
+        border-radius: 50%;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        background: rgba(255, 255, 255, 0.08);
+        color: rgba(255, 255, 255, 0.82);
+        flex-shrink: 0;
+      }
+      .sidebar-update-copy {
+        min-width: 0;
+        display: flex;
+        flex-direction: column;
+        gap: 2px;
+        text-align: left;
+        flex: 1;
+      }
+      .sidebar-update-copy strong {
+        font-size: 15px;
+        line-height: 1.1;
+      }
+      .sidebar-update-copy span {
+        font-size: 12px;
+        color: rgba(238, 242, 251, 0.68);
+      }
+      .sidebar-update-action {
+        flex-shrink: 0;
+        font-size: 12px;
+        font-weight: 700;
+        letter-spacing: 0;
+        text-transform: uppercase;
+        color: rgba(255,255,255,0.88);
       }
       .chat-subtitle {
         margin: 0;

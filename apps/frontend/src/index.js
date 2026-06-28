@@ -1,5 +1,11 @@
 import crypto from "node:crypto";
 import http from "node:http";
+import fs from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 import {
   androidAlphaApkBuffer,
@@ -16,9 +22,6 @@ import {
   inter700Url,
   inter800Buffer,
   inter800Url,
-  lucideBuffer,
-  lucideUrl,
-  lucideCss,
   emojiIconBuffer,
   emojiIconUrl,
   outgoingCallRingtoneBuffer,
@@ -53,8 +56,8 @@ import { uiFlags } from "./server/ui-flags.js";
 
 const host = process.env.HOST ?? "0.0.0.0";
 const port = Number(process.env.PORT ?? 5173);
-const apiBaseUrl = process.env.VITE_API_BASE_URL ?? "";
-const wsBaseUrl = process.env.VITE_WS_BASE_URL ?? "";
+const apiBaseUrl = process.env.VITE_API_BASE_URL || "https://api.thegrapht.su";
+const wsBaseUrl = process.env.VITE_WS_BASE_URL || "wss://ws.thegrapht.su";
 const mtprotoBaseUrl = process.env.VITE_MTPROTO_BASE_URL ?? "";
 const rtcIceServers = process.env.VITE_WEBRTC_ICE_SERVERS ?? "";
 const htmlSecurityHeaders = createHtmlSecurityHeaders({
@@ -72,7 +75,33 @@ const landingSecurityHeaders = createHtmlSecurityHeaders({
 });
 
 
-const clientScript = buildClientScript({
+let compiledScript = "";
+const compiledAppPath = path.resolve(__dirname, "../dist/app.js");
+try {
+  if (fs.existsSync(compiledAppPath)) {
+    compiledScript = fs.readFileSync(compiledAppPath, "utf8");
+    console.log("Loaded compiled Preact client script from dist/app.js");
+  }
+} catch (err) {
+  console.warn("Failed to read compiled client script:", err);
+}
+
+const configScriptJs = `window.__THEGRAPHT_CONFIG__ = {
+  apiBaseUrl: ${JSON.stringify(apiBaseUrl)},
+  appleEmojiAssetBaseUrl: ${JSON.stringify(appleEmojiAssetBaseUrl)},
+  outgoingCallRingtoneUrl: ${JSON.stringify(outgoingCallRingtoneUrl)},
+  incomingCallRingtoneUrl: ${JSON.stringify(incomingCallRingtoneUrl)},
+  rtcIceServers: ${JSON.stringify(rtcIceServers)},
+  logoDataUrl: ${JSON.stringify(logoUrl)},
+  messageSoundUrl: ${JSON.stringify(messageSoundUrl)},
+  searchEmptyVideoUrl: ${JSON.stringify(searchEmptyVideoUrl)},
+  sendLocalSoundUrl: ${JSON.stringify(sendLocalSoundUrl)},
+  serviceWorkerUrl: ${JSON.stringify(serviceWorkerUrl)},
+  uiFlags: ${JSON.stringify(uiFlags)},
+  wsBaseUrl: ${JSON.stringify(wsBaseUrl)}
+};`;
+
+const fallbackScript = buildClientScript({
   apiBaseUrl,
   appleEmojiAssetBaseUrl,
   outgoingCallRingtoneUrl,
@@ -86,6 +115,8 @@ const clientScript = buildClientScript({
   uiFlags,
   wsBaseUrl
 });
+
+const clientScript = compiledScript ? compiledScript + "\n" + fallbackScript : fallbackScript;
 const clientScriptHash = crypto.createHash("sha256").update(clientScript).digest("hex").slice(0, 12);
 const clientScriptUrl = `/app.${clientScriptHash}.js`;
 
@@ -96,14 +127,13 @@ const html = buildHtml({
   inter600Url,
   inter700Url,
   inter800Url,
-  lucideUrl,
-  lucideCss,
   manifestUrl,
   logoDataUrl: logoUrl,
   wallpaperDataUrl: wallpaperUrl,
   emojiIconDataUrl: emojiIconUrl,
   settingsKeyboardIconDataUrl: settingsKeyboardIconUrl,
-  uiFlags
+  uiFlags,
+  configScript: ""
 });
 
 const faqHtml = buildFaqHtml({
@@ -140,6 +170,7 @@ const requestHandler = createRequestHandler({
   privacyHtml,
   clientScript,
   clientScriptUrl,
+  configScriptJs,
   baseSecurityHeaders,
   htmlSecurityHeaders,
   landingSecurityHeaders,
@@ -157,8 +188,6 @@ const requestHandler = createRequestHandler({
   inter700Buffer,
   inter800Url,
   inter800Buffer,
-  lucideUrl,
-  lucideBuffer,
   logoUrl,
   logoBuffer,
   emojiIconUrl,

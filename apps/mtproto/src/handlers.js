@@ -229,7 +229,7 @@ export const handleTransportFrame = async (request, response) => {
   }
 
   const contentType = String(request.headers["content-type"] ?? "").split(";")[0].trim().toLowerCase();
-  if (![protocol.frameContentType, "application/octet-stream"].includes(contentType)) {
+  if (![protocol.frameContentType, "application/x-thegrapht-mtproto-frame", "application/octet-stream"].includes(contentType)) {
     sendBinaryFrame(request, response, 415, {
       ok: false,
       error: `Unsupported frame content type. Use ${protocol.frameContentType}.`

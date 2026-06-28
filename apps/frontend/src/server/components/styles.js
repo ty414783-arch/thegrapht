@@ -6,8 +6,6 @@ export const buildStyles = ({
   inter600Url,
   inter700Url,
   inter800Url,
-  lucideUrl,
-  lucideCss,
   wallpaperDataUrl
 }) => `
 <style>
@@ -46,13 +44,6 @@ export const buildStyles = ({
         font-display: block;
         src: url("${inter800Url}") format("truetype");
       }
-      @font-face {
-        font-family: "lucide";
-        font-style: normal;
-        font-weight: normal;
-        font-display: block;
-        src: url("${lucideUrl}") format("truetype");
-      }
       :root {
         color: #eef2fb;
         font-family: "Segoe UI", "Trebuchet MS", sans-serif;
@@ -68,7 +59,6 @@ export const buildStyles = ({
       .lucide,
       [class^="icon-"],
       [class*=" icon-"] {
-        font-family: "lucide" !important;
         font-style: normal;
         font-weight: normal;
         font-variant: normal;
@@ -86,11 +76,6 @@ export const buildStyles = ({
         pointer-events: none;
         user-select: none;
       }
-      body:not(.fonts-loaded) .lucide,
-      body:not(.fonts-loaded) .lucide {
-        color: transparent !important;
-      }
-      ${lucideCss}
       .page.ui-inter-font {
         font-family: "Inter", "Segoe UI", sans-serif;
       }
@@ -738,10 +723,8 @@ export const buildStyles = ({
         position: absolute;
         inset: 0;
         border-radius: 0;
-        background:
-          linear-gradient(180deg, rgba(12, 16, 24, 0.54) 0%, rgba(14, 18, 26, 0.68) 100%),
-          url("${wallpaperDataUrl}") center center / cover no-repeat;
-        opacity: 0.9;
+        background: url("${wallpaperDataUrl}") center center / cover no-repeat;
+        opacity: 1;
         pointer-events: none;
       }
       .workspace-main > * {
@@ -1407,6 +1390,7 @@ export const buildStyles = ({
         left: 20px;
         bottom: 20px;
         z-index: 5;
+        transition: transform 0.28s cubic-bezier(0.22, 0.61, 0.36, 1), opacity 0.22s ease;
       }
       .sidebar-ai-button {
         width: 48px;
@@ -1439,6 +1423,76 @@ export const buildStyles = ({
       .sidebar-ai-button:active {
         transform: scale(0.95) translateY(0);
         box-shadow: 0 4px 12px rgba(236, 72, 153, 0.2);
+      }
+      .sidebar-ai-button.disabled {
+        background: rgba(80, 85, 100, 0.5) !important;
+        box-shadow: none !important;
+        cursor: not-allowed !important;
+        pointer-events: none !important;
+        opacity: 0.5;
+        transform: none !important;
+      }
+      .sidebar-ai-button.disabled:hover {
+        transform: none !important;
+        box-shadow: none !important;
+        background: rgba(80, 85, 100, 0.5) !important;
+      }
+      .sidebar-ai-fab-container.update-mode {
+        left: 18px;
+        right: 18px;
+        bottom: 18px;
+        transform: translateY(-14px);
+        opacity: 1;
+      }
+      .sidebar-ai-fab-container.update-mode .sidebar-ai-tooltip {
+        display: none !important;
+      }
+      .sidebar-ai-button.update-mode {
+        width: 100%;
+        height: 58px;
+        border-radius: 18px;
+        justify-content: flex-start;
+        gap: 10px;
+        padding: 0 16px 0 14px;
+        background: linear-gradient(135deg, rgba(90, 97, 111, 0.96) 0%, rgba(56, 61, 72, 0.96) 100%);
+        box-shadow: 0 18px 34px rgba(0, 0, 0, 0.24);
+        transform: translateY(0);
+      }
+      .sidebar-ai-button.update-mode .sidebar-ai-button-icon {
+        width: 32px;
+        height: 32px;
+        border-radius: 50%;
+        background: rgba(255,255,255,0.08);
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        flex-shrink: 0;
+      }
+      .sidebar-ai-button.update-mode.is-busy .sidebar-ai-button-icon .lucide {
+        animation: searchSpin 0.9s linear infinite;
+      }
+      .sidebar-ai-button.update-mode .sidebar-ai-button-copy {
+        min-width: 0;
+        display: flex;
+        flex-direction: column;
+        text-align: left;
+        gap: 2px;
+        flex: 1;
+      }
+      .sidebar-ai-button.update-mode .sidebar-ai-button-title {
+        font-size: 15px;
+        font-weight: 800;
+        line-height: 1.1;
+      }
+      .sidebar-ai-button.update-mode .sidebar-ai-button-subtitle {
+        font-size: 12px;
+        color: rgba(238, 242, 251, 0.68);
+      }
+      .sidebar-ai-button.update-mode .sidebar-ai-button-action {
+        font-size: 12px;
+        font-weight: 800;
+        text-transform: uppercase;
+        color: rgba(255,255,255,0.88);
       }
       .sidebar-ai-tooltip {
         position: absolute;
@@ -1697,6 +1751,9 @@ export const buildStyles = ({
       .dialog-avatar.user-avatar {
         background: linear-gradient(180deg, var(--avatar-start, #6cb5ff) 0%, var(--avatar-end, #4a8fe9) 100%);
       }
+      .dialog-avatar.saved-avatar {
+        background: linear-gradient(180deg, #3b82f6 0%, #1d4ed8 100%);
+      }
       .dialog-avatar-presence {
         position: absolute;
         left: -2px;
@@ -1912,6 +1969,7 @@ export const buildStyles = ({
       }
       .chat-window {
         --chat-profile-panel-width: min(560px, 46%);
+        --chat-header-height: 72px;
         --chat-top-offset: 0px;
         --chat-group-call-top-offset: 0px;
         --chat-group-call-join-offset: 0px;
@@ -1978,7 +2036,7 @@ export const buildStyles = ({
         background: rgba(18, 22, 30, 0.95);
         border: 1px solid rgba(255,255,255,0.07);
         box-shadow: none;
-        transition: opacity 0.24s ease, transform 0.24s ease, right 0.34s cubic-bezier(0.22, 0.61, 0.36, 1), width 0.34s cubic-bezier(0.22, 0.61, 0.36, 1);
+        transition: top 0.24s ease, opacity 0.24s ease, transform 0.24s ease, right 0.34s cubic-bezier(0.22, 0.61, 0.36, 1), width 0.34s cubic-bezier(0.22, 0.61, 0.36, 1);
       }
       .chat-window.search-open .chat-island {
         transform: translateX(-50%) translateY(0);
@@ -2004,7 +2062,7 @@ export const buildStyles = ({
         width: 42px;
         height: 42px;
         border-radius: 50%;
-        display: none;
+        display: inline-flex;
         align-items: center;
         justify-content: center;
         flex-shrink: 0;
@@ -2069,7 +2127,7 @@ export const buildStyles = ({
         transition: margin-right 0.34s cubic-bezier(0.22, 0.61, 0.36, 1), opacity 0.2s ease;
       }
       .page.ui-telegram-topbar .chat-island {
-        top: calc(var(--chat-top-offset) + var(--chat-group-call-top-offset));
+        top: calc(var(--chat-top-offset, 0px) + var(--chat-group-call-top-offset));
         left: 0;
         right: 0;
         transform: none;
@@ -2077,7 +2135,7 @@ export const buildStyles = ({
         max-width: none;
         min-width: 0;
         gap: 18px;
-        min-height: 72px;
+        min-height: var(--chat-header-height);
         padding: 12px 22px;
         border-radius: 0;
         border: 0;
@@ -2115,13 +2173,13 @@ export const buildStyles = ({
         margin-right: var(--chat-profile-panel-width);
       }
       .page.ui-telegram-topbar .chat-search-panel {
-        top: calc(80px + var(--chat-top-offset) + var(--chat-group-call-top-offset) + var(--chat-group-call-join-offset));
+        top: calc(var(--chat-header-height) + 8px + var(--chat-top-offset) + var(--chat-group-call-top-offset) + var(--chat-group-call-join-offset));
       }
       .page.ui-telegram-topbar .chat-call-chip {
-        top: calc(84px + var(--chat-top-offset) + var(--chat-group-call-top-offset) + var(--chat-group-call-join-offset));
+        top: calc(var(--chat-header-height) + 12px + var(--chat-top-offset) + var(--chat-group-call-top-offset) + var(--chat-group-call-join-offset));
       }
       .page.ui-telegram-topbar .chat-stage {
-        padding-top: calc(76px + var(--chat-top-offset) + var(--chat-group-call-top-offset) + var(--chat-group-call-join-offset));
+        padding-top: calc(var(--chat-header-height) + 4px + var(--chat-top-offset) + var(--chat-group-call-top-offset) + var(--chat-group-call-join-offset));
       }
       .page.ui-telegram-topbar .workspace-main.empty-chat .chat-island {
         transform: translateY(-14px);
@@ -2933,7 +2991,7 @@ export const buildStyles = ({
       .chat-audio-top-player {
         position: absolute;
         top: 0;
-        left: 0;
+        left: var(--sidebar-width, 360px);
         right: 0;
         z-index: 16;
         height: 54px;
@@ -2941,8 +2999,8 @@ export const buildStyles = ({
         transform: translateY(-54px);
         pointer-events: none;
         border-top: 1px solid rgba(255,255,255,0.04);
-        border-bottom: 1px solid rgba(255,255,255,0.07);
-        background: rgba(29, 33, 43, 0.97);
+        border-bottom: 1px solid rgba(0, 0, 0, 0.25);
+        background: #1d2129;
         transition: opacity 0.24s ease, transform 0.24s ease;
         overflow: hidden;
       }
@@ -2950,6 +3008,7 @@ export const buildStyles = ({
         opacity: 1;
         transform: translateY(0);
         pointer-events: auto;
+        box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
       }
       .chat-audio-top-inner {
         height: 100%;
@@ -2960,8 +3019,8 @@ export const buildStyles = ({
         padding: 7px 14px 7px 14px;
       }
       .chat-audio-top-btn {
-        width: 24px;
-        height: 24px;
+        width: 32px;
+        height: 32px;
         border: 0;
         border-radius: 8px;
         background: transparent;
@@ -2971,12 +3030,19 @@ export const buildStyles = ({
         justify-content: center;
         cursor: pointer;
         padding: 0;
+        transition: background 0.16s ease, color 0.16s ease;
       }
-      .chat-audio-top-btn:hover {
-        background: rgba(255,255,255,0.06);
+      .chat-audio-top-btn:hover,
+      .chat-audio-top-btn:focus,
+      .chat-audio-top-btn:active {
+        background: rgba(255,255,255,0.08);
         color: #e5ebf7;
+        outline: none;
       }
-      .chat-audio-top-btn .lucide {
+      .chat-audio-top-btn .lucide,
+      .chat-audio-top-btn svg {
+        width: 18px;
+        height: 18px;
         font-size: 18px;
         font-variation-settings: "FILL" 1, "wght" 520, "GRAD" 0, "opsz" 20;
       }
@@ -3026,21 +3092,44 @@ export const buildStyles = ({
       }
       .chat-audio-top-speed,
       .chat-audio-top-repeat {
+        width: 32px;
+        height: 32px;
         border: 0;
+        border-radius: 8px;
         background: transparent;
-        color: #aeb6c5;
+        color: #9ea7b8;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        cursor: pointer;
+        padding: 0;
+        transition: background 0.16s ease, color 0.16s ease;
+      }
+      .chat-audio-top-speed {
         font-size: 12px;
         font-weight: 700;
-        cursor: pointer;
-        padding: 0 6px;
-        height: 24px;
       }
       .chat-audio-top-speed:hover,
-      .chat-audio-top-repeat:hover {
-        color: #edf2fb;
+      .chat-audio-top-repeat:hover,
+      .chat-audio-top-speed:focus,
+      .chat-audio-top-repeat:focus,
+      .chat-audio-top-speed:active,
+      .chat-audio-top-repeat:active {
+        background: rgba(255,255,255,0.08);
+        color: #e5ebf7;
+        outline: none;
       }
       .chat-audio-top-repeat.is-active {
         color: #8ab4ff;
+        background: rgba(138, 180, 255, 0.12);
+      }
+      .chat-audio-top-repeat.is-active:hover {
+        background: rgba(138, 180, 255, 0.18);
+        color: #a3c5ff;
+      }
+      .chat-audio-top-repeat svg {
+        width: 18px;
+        height: 18px;
       }
       .chat-audio-top-volume-wrap {
         position: relative;
@@ -3109,10 +3198,17 @@ export const buildStyles = ({
         background: #8ab4ff;
       }
       .page.ui-telegram-topbar .chat-audio-top-player {
-        top: 0;
+        top: var(--chat-group-call-top-offset);
+        z-index: 16;
       }
       .page.ui-telegram-topbar .chat-window.audio-top-player-visible {
         --chat-top-offset: 56px;
+      }
+      .page:not(.ui-telegram-topbar) .chat-window.audio-top-player-visible .chat-island {
+        top: 66px;
+      }
+      .page:not(.ui-telegram-topbar) .chat-window.audio-top-player-visible .chat-stage {
+        padding-top: 132px;
       }
       .page.ui-telegram-topbar .chat-window.group-call-banner-visible {
         --chat-group-call-top-offset: 44px;
@@ -4136,12 +4232,32 @@ export const buildStyles = ({
         background: transparent;
         cursor: pointer;
         font-weight: 700;
+        padding: 10px 16px;
+        border-radius: 10px;
+        transition: background 0.15s ease;
+      }
+      .leave-call-modal-actions button:hover,
+      .leave-call-modal-actions button:focus,
+      .leave-call-modal-actions button:active {
+        background: rgba(255, 255, 255, 0.08);
+        border-radius: 10px;
+        outline: none;
       }
       #group-call-leave-cancel {
         color: #9a84ff;
       }
+      #group-call-leave-cancel:hover,
+      #group-call-leave-cancel:focus,
+      #group-call-leave-cancel:active {
+        background: rgba(154, 132, 255, 0.12);
+      }
       #group-call-leave-confirm {
         color: #ff6670;
+      }
+      #group-call-leave-confirm:hover,
+      #group-call-leave-confirm:focus,
+      #group-call-leave-confirm:active {
+        background: rgba(255, 102, 112, 0.12);
       }
       .call-modal[data-call-mode="group"] {
         width: min(430px, calc(100% - 22px));
@@ -5040,12 +5156,12 @@ export const buildStyles = ({
         white-space: pre-wrap;
       }
       .message-call-card {
-        min-width: 194px;
+        min-width: 170px;
         display: flex;
         align-items: center;
-        gap: 12px;
-        padding: 10px 12px;
-        border-radius: 18px;
+        gap: 10px;
+        padding: 8px 10px;
+        border-radius: 14px;
         background: rgba(16, 20, 27, 0.72);
       }
       .message.incoming .message-call-card {
@@ -5056,17 +5172,21 @@ export const buildStyles = ({
         background: rgba(32, 22, 24, 0.88);
       }
       .message-call-icon {
-        width: 34px;
-        height: 34px;
+        width: 28px;
+        height: 28px;
         border-radius: 50%;
         display: inline-flex;
         align-items: center;
         justify-content: center;
         background: rgba(255,255,255,0.11);
         color: #f5f7ff;
-        font-size: 19px;
-        line-height: 1;
         flex-shrink: 0;
+      }
+      .message-call-icon svg {
+        width: 15px;
+        height: 15px;
+        stroke: currentColor;
+        fill: none;
       }
       .message-call-card.missed .message-call-icon,
       .message-call-card.declined .message-call-icon {
@@ -5075,16 +5195,16 @@ export const buildStyles = ({
       .message-call-copy {
         min-width: 0;
         display: grid;
-        gap: 2px;
+        gap: 1px;
       }
       .message-call-title {
-        font-size: 15px;
+        font-size: 13.5px;
         font-weight: 700;
         line-height: 1.15;
         color: #f7f9ff;
       }
       .message-call-subtitle {
-        font-size: 13px;
+        font-size: 11.5px;
         line-height: 1.15;
         color: rgba(255,255,255,0.76);
       }
@@ -5953,10 +6073,10 @@ export const buildStyles = ({
         display: flex;
         align-items: center;
         box-sizing: border-box;
-        border-bottom: 1px solid var(--border);
-        background: var(--panel-background);
+        border-bottom: 1px solid rgba(0, 0, 0, 0.25);
+        background: #22252b;
         padding: 0 12px;
-        z-index: 2;
+        z-index: 16;
       }
       .chat-audio-top-player.header-player .header-player-button {
         padding: 4px;
@@ -6136,10 +6256,10 @@ ${composerStyles}
         display: flex;
         align-items: center;
         box-sizing: border-box;
-        border-bottom: 1px solid var(--border);
-        background: var(--panel-background);
+        border-bottom: 1px solid rgba(0, 0, 0, 0.25);
+        background: #22252b;
         padding: 0 12px;
-        z-index: 2;
+        z-index: 16;
       }
       .chat-audio-top-player.header-player .header-player-button {
         padding: 4px;
@@ -6361,10 +6481,26 @@ ${composerStyles}
         font-weight: 800;
         text-transform: uppercase;
         cursor: pointer;
-        padding: 10px 4px;
+        padding: 10px 16px;
+        border-radius: 10px;
+        transition: background 0.15s ease;
+      }
+      .delete-message-button:hover,
+      .delete-message-button:focus,
+      .delete-message-button:active {
+        background: rgba(167, 136, 255, 0.12);
+        border-radius: 10px;
+        outline: none;
       }
       .delete-message-button.danger {
         color: #ff4f58;
+      }
+      .delete-message-button.danger:hover,
+      .delete-message-button.danger:focus,
+      .delete-message-button.danger:active {
+        background: rgba(255, 79, 88, 0.12);
+        border-radius: 10px;
+        outline: none;
       }
       .attachment-modal-shell {
         position: absolute;
@@ -7118,6 +7254,7 @@ ${composerStyles}
         .workspace-main.empty-chat .chat-window {
           min-height: 100dvh;
           border-radius: 0;
+          --chat-header-height: 64px;
         }
         .workspace-main.empty-chat {
           justify-content: stretch;
@@ -7129,7 +7266,7 @@ ${composerStyles}
           padding: 74px 10px 10px;
         }
         .page.ui-telegram-topbar .chat-stage {
-          padding: 74px 10px 10px;
+          padding-top: calc(var(--chat-header-height) + 10px + var(--chat-top-offset) + var(--chat-group-call-top-offset) + var(--chat-group-call-join-offset));
         }
         .chat-island {
           width: 100%;
@@ -7193,6 +7330,16 @@ ${composerStyles}
           pointer-events: none;
           transform: translateY(10px) scale(0.94);
         }
+        .chat-audio-top-player {
+          left: 0;
+          top: 0;
+        }
+        .page.mobile-chat-open.ui-telegram-topbar .chat-audio-top-player {
+          top: calc(var(--chat-header-height) + var(--chat-group-call-top-offset));
+        }
+        .audio-top-player-visible .workspace-sidebar {
+          padding-top: calc(18px + 54px) !important;
+        }
       }
       @media (max-width: 680px) {
         .page {
@@ -7228,10 +7375,13 @@ ${composerStyles}
           top: 12px;
           width: min(calc(100vw - 34px), 280px);
         }
+        .chat-window {
+          --chat-header-height: 68px;
+        }
         .page.ui-telegram-topbar .chat-island {
           top: 0;
           width: 100%;
-          min-height: 68px;
+          min-height: var(--chat-header-height);
           padding: 11px 14px;
         }
         .page.ui-telegram-topbar .chat-header-avatar {
@@ -7243,14 +7393,13 @@ ${composerStyles}
           width: min(calc(100vw - 24px), 100%);
         }
         .page.ui-telegram-topbar .chat-search-panel {
-          top: 74px;
-          width: min(calc(100vw - 24px), 100%);
+          top: calc(var(--chat-header-height) + 6px + var(--chat-top-offset) + var(--chat-group-call-top-offset) + var(--chat-group-call-join-offset));
         }
         .chat-stage {
           padding: 78px 10px 14px;
         }
         .page.ui-telegram-topbar .chat-stage {
-          padding: 82px 10px 14px;
+          padding-top: calc(var(--chat-header-height) + 14px + var(--chat-top-offset) + var(--chat-group-call-top-offset) + var(--chat-group-call-join-offset));
         }
         .composer {
           margin-top: 10px;

@@ -135,17 +135,20 @@ object ApiClient {
         return payload.optJSONArray("users") ?: JSONArray()
     }
 
-    fun sendMessage(context: Context, publicId: String, bodyText: String): JSONObject =
+    fun sendMessage(context: Context, publicId: String, bodyText: String, replyToMessageId: String? = null): JSONObject =
         sendJson(context, "/api/v1/dialogs/by-public-id/${URLEncoder.encode(publicId, "UTF-8")}/messages", "POST", JSONObject().apply {
             put("body", bodyText)
+            if (!replyToMessageId.isNullOrBlank()) {
+                put("replyToMessageId", replyToMessageId)
+            }
         })
 
-    fun sendImages(context: Context, publicId: String, imageUris: List<Uri>, caption: String): List<JSONObject> {
+    fun sendImages(context: Context, publicId: String, imageUris: List<Uri>, caption: String, replyToMessageId: String? = null): List<JSONObject> {
         val results = mutableListOf<JSONObject>()
         imageUris.chunked(5).forEachIndexed { chunkIndex, chunk ->
             val albumId = if (imageUris.size > 1) "android_album_${System.currentTimeMillis()}_$chunkIndex" else null
             chunk.forEachIndexed { index, uri ->
-                results += uploadFile(context, publicId, uri, if (index == 0) caption else "", albumId, index, chunk.size)
+                results += uploadFile(context, publicId, uri, if (index == 0) caption else "", albumId, index, chunk.size, replyToMessageId)
             }
         }
         return results
@@ -158,7 +161,8 @@ object ApiClient {
         bodyText: String,
         albumId: String? = null,
         albumIndex: Int = -1,
-        albumSize: Int = 0
+        albumSize: Int = 0,
+        replyToMessageId: String? = null
     ): JSONObject {
         val boundary = "----TheGraphtBoundary${System.currentTimeMillis()}"
         val connection = open(context, "/api/v1/dialogs/by-public-id/${URLEncoder.encode(publicId, "UTF-8")}/messages", "POST")
@@ -175,6 +179,9 @@ object ApiClient {
             writeFormField(buffer, boundary, "albumId", albumId)
             writeFormField(buffer, boundary, "albumIndex", albumIndex.toString())
             writeFormField(buffer, boundary, "albumSize", albumSize.toString())
+        }
+        if (!replyToMessageId.isNullOrBlank()) {
+            writeFormField(buffer, boundary, "replyToMessageId", replyToMessageId)
         }
 
         buffer.write("--$boundary\r\n".toByteArray(StandardCharsets.UTF_8))
@@ -196,6 +203,14 @@ object ApiClient {
         if (status >= 400) throw ApiException(payload.optString("error", "Upload failed"), status)
         return payload
     }
+
+    fun createSecureDialog(context: Context, userId: String): JSONObject =
+        sendJson(context, "/api/v1/dialogs/direct/secure", "POST", JSONObject().apply {
+            put("targetUserId", userId)
+        })
+
+    fun deleteMessage(context: Context, messageId: String): JSONObject =
+        sendJson(context, "/api/v1/messages/${URLEncoder.encode(messageId, "UTF-8")}", "DELETE", null)
 
     private fun writeFormField(output: ByteArrayOutputStream, boundary: String, name: String, value: String) {
         output.write("--$boundary\r\n".toByteArray(StandardCharsets.UTF_8))

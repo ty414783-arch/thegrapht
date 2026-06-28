@@ -55,8 +55,8 @@ class AuthActivity : Activity() {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_auth)
 
-        authCard = findViewById(R.id.authCard)
-        verifyCard = findViewById(R.id.verifyCard)
+        authCard = findViewById<View>(R.id.authCard)
+        verifyCard = findViewById<View>(R.id.verifyCard)
 
         // Credentials mapping
         authTitle = findViewById(R.id.authTitle) as TextView

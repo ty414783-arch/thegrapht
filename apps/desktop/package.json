@@ -1,6 +1,6 @@
 {
   "name": "thegrapht-desktop",
-  "version": "0.2.28",
+  "version": "0.2.36",
   "private": true,
   "description": "TheGrapht native desktop client (Electron + React + Vite)",
   "main": "main.js",

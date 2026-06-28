@@ -39,7 +39,11 @@ function DialogItem({ dialog, isActive, onClick }) {
   );
 }
 
-export default function Sidebar({ dialogs = [], activeDialogId, onSelectDialog, currentUser, onLogout, searchQuery, onSearchChange }) {
+export default function Sidebar({ dialogs = [], activeDialogId, onSelectDialog, currentUser, onLogout, searchQuery, onSearchChange, updateState, onUpdateClick, onCancelUpdate }) {
+  const updateAvailable = updateState?.status === 'available';
+  const updateDownloading = updateState?.status === 'downloading';
+  const updateInstalling = updateState?.status === 'installing';
+  const updateProgress = Number(updateState?.progress || 0);
   return (
     <aside className="workspace-sidebar" aria-label="Chats sidebar">
       {/* Brand Header */}
@@ -101,6 +105,36 @@ export default function Sidebar({ dialogs = [], activeDialogId, onSelectDialog, 
             onClick={(e) => { ripple(e); onLogout(); }}
           >
             Log out
+          </button>
+        </div>
+      )}
+
+      {(updateAvailable || updateDownloading || updateInstalling) && (
+        <div className={`sidebar-update-banner ${updateDownloading || updateInstalling ? 'is-busy' : 'is-available'}`}>
+          <button
+            className="sidebar-update-button"
+            type="button"
+            onClick={(e) => {
+              ripple(e);
+              if (updateDownloading || updateInstalling) {
+                onCancelUpdate?.();
+                return;
+              }
+              onUpdateClick?.();
+            }}
+            disabled={updateInstalling}
+            aria-label={updateDownloading || updateInstalling ? 'Cancel update' : 'Update application'}
+          >
+            <span className="sidebar-update-icon material-symbols-rounded" aria-hidden="true">
+              {updateDownloading || updateInstalling ? 'refresh' : 'download'}
+            </span>
+            <span className="sidebar-update-copy">
+              <strong>{updateDownloading || updateInstalling ? 'Updating' : 'Update'}</strong>
+              <span>{updateDownloading || updateInstalling ? `${Math.max(0, Math.min(100, updateProgress))}%` : `Version ${String(updateState?.version || '').replace(/^v/i, '')}`}</span>
+            </span>
+            <span className="sidebar-update-action">
+              {updateDownloading || updateInstalling ? 'Cancel' : 'Update'}
+            </span>
           </button>
         </div>
       )}

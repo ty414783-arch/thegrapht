@@ -1,0 +1,588 @@
+// Attachment Modal Service for Preact / TypeScript Migration
+export {};
+
+declare const messageList: HTMLElement;
+declare const bottomLockToken: any;
+declare const hardPinMessagesToBottom: (token: any) => void;
+declare const composerAttachmentPreview: HTMLElement;
+declare const composerAttachmentImage: HTMLImageElement;
+declare const composerAttachmentMeta: HTMLElement;
+declare const syncComposerState: () => void;
+declare const attachmentModal: HTMLElement;
+declare const attachmentModalEmojiPicker: HTMLElement;
+declare const composerFileInput: HTMLInputElement;
+declare const attachmentModalCaption: HTMLInputElement;
+declare const attachmentModalPrev: HTMLElement;
+declare const attachmentModalNext: HTMLElement;
+declare const attachmentModalImage: HTMLImageElement;
+declare const attachmentModalStrip: HTMLElement;
+declare const attachmentModalTitle: HTMLElement;
+declare const composerInput: HTMLInputElement;
+declare const showToast: (msg: string, type: "error" | "success" | "info") => void;
+
+declare const measureImageUrl: (url: string) => Promise<{ naturalWidth: number; naturalHeight: number }>;
+declare const measureAudioDuration: (url: string) => Promise<number>;
+declare const readCachedImageDimensions: (url: string) => { naturalWidth: number; naturalHeight: number } | null;
+declare const writeImageDimensions: (url: string, imageNode: HTMLImageElement) => void;
+
+// Global format helpers from format-utils
+declare const formatFileCount: (count: number) => string;
+declare const formatPhotoCount: (count: number) => string;
+declare const formatDuration: (v: number) => string;
+declare const formatBytes: (v: number) => string;
+declare const escapeHtml: (v: any) => string;
+
+const getWin = () => window as any;
+
+// Initialize state variables on window so they are globally accessible/shared
+if (typeof getWin().pendingImageAttachments === 'undefined') getWin().pendingImageAttachments = [];
+if (typeof getWin().pendingImageAttachmentIndex === 'undefined') getWin().pendingImageAttachmentIndex = 0;
+if (typeof getWin().pendingFileAttachments === 'undefined') getWin().pendingFileAttachments = [];
+if (typeof getWin().pendingFileAttachmentIndex === 'undefined') getWin().pendingFileAttachmentIndex = 0;
+if (typeof getWin().attachmentModalMode === 'undefined') getWin().attachmentModalMode = "image";
+if (typeof getWin().pendingImageCaption === 'undefined') getWin().pendingImageCaption = "";
+if (typeof getWin().pendingAttachmentModalScrollTop === 'undefined') getWin().pendingAttachmentModalScrollTop = 0;
+if (typeof getWin().attachmentModalCleanupToken === 'undefined') getWin().attachmentModalCleanupToken = 0;
+if (typeof getWin().attachmentModalCleanupTimer === 'undefined') getWin().attachmentModalCleanupTimer = null;
+
+const getMaxMediaAttachments = () => getWin().MAX_MEDIA_ATTACHMENTS || 500;
+
+const getConstrainedImageSize = (naturalWidth: number, naturalHeight: number) => {
+  if (!naturalWidth || !naturalHeight) {
+    return null;
+  }
+
+  const maxWidth = Math.min(420, Math.max(180, Math.floor(window.innerWidth * 0.46)));
+  const maxHeight = Math.min(520, Math.max(220, Math.floor(window.innerHeight * 0.62)));
+  const ratio = naturalWidth / naturalHeight;
+  let width = Math.min(naturalWidth, maxWidth);
+  let height = width / ratio;
+
+  if (height > maxHeight) {
+    height = maxHeight;
+    width = height * ratio;
+  }
+
+  return {
+    width: Math.round(width),
+    height: Math.round(height)
+  };
+};
+
+const getImageShellStyle = (message: any) => {
+  if (message?.albumId) {
+    return "";
+  }
+
+  const inlineDimensions = (
+    Number(message?.mediaNaturalWidth) > 0
+    && Number(message?.mediaNaturalHeight) > 0
+  )
+    ? {
+        naturalWidth: Number(message.mediaNaturalWidth),
+        naturalHeight: Number(message.mediaNaturalHeight)
+      }
+    : null;
+  const dimensions = inlineDimensions || (typeof readCachedImageDimensions !== 'undefined' ? readCachedImageDimensions(message?.mediaUrl) : null);
+  const size = dimensions
+    ? getConstrainedImageSize(dimensions.naturalWidth, dimensions.naturalHeight)
+    : null;
+
+  return size ? ' style="width: ' + size.width + 'px; height: ' + size.height + 'px;"' : "";
+};
+
+const markMessageImageLoaded = (imageNode: HTMLImageElement) => {
+  if (!(imageNode instanceof HTMLImageElement)) {
+    return;
+  }
+
+  const shell = imageNode.closest(".message-image-shell");
+
+  if (!shell || !(shell instanceof HTMLElement)) {
+    return;
+  }
+
+  const isAlbumTile = Boolean(shell.closest(".message-album-item"));
+  if (typeof writeImageDimensions !== 'undefined') {
+    writeImageDimensions(imageNode.currentSrc || imageNode.src, imageNode);
+  }
+
+  if (
+    !isAlbumTile
+    && imageNode.naturalWidth > 0
+    && imageNode.naturalHeight > 0
+  ) {
+    const size = getConstrainedImageSize(imageNode.naturalWidth, imageNode.naturalHeight);
+    if (size) {
+      shell.style.width = size.width + "px";
+      shell.style.height = size.height + "px";
+    }
+  }
+
+  shell.classList.add("loaded");
+};
+const hydrateMessageImages = (options: any = {}) => {
+  const lockToken = options.lockToken || 0;
+  const pendingImages: HTMLImageElement[] = [];
+  const keepBottomPinned = () => {
+    const cancelState = Boolean(getWin().bottomLockCanceledByUser);
+    const currentToken = getWin().bottomLockToken || 0;
+    if (!cancelState && typeof hardPinMessagesToBottom === "function") {
+      hardPinMessagesToBottom(currentToken);
+    }
+  };
+
+  const listNode = getWin().messageList || document.getElementById("message-list");
+  if (listNode) {
+    listNode.querySelectorAll(".message-image").forEach((imageNode) => {
+      if (!(imageNode instanceof HTMLImageElement) || imageNode.dataset.hydrated === "true") {
+        return;
+      }
+
+      imageNode.dataset.hydrated = "true";
+      imageNode.addEventListener("load", () => {
+        markMessageImageLoaded(imageNode);
+        keepBottomPinned();
+      });
+      imageNode.addEventListener("error", () => {
+        const fallbackSrc = String(imageNode.getAttribute("data-fallback-src") || "");
+        if (fallbackSrc && imageNode.dataset.fallbackTried !== "true") {
+          imageNode.dataset.fallbackTried = "true";
+          imageNode.src = fallbackSrc;
+          const linkNode = imageNode.closest(".message-image-link");
+          if (linkNode) {
+            linkNode.setAttribute("data-image-url", fallbackSrc);
+          }
+          return;
+        }
+        const shell = imageNode.closest(".message-image-shell");
+        if (shell) {
+          shell.classList.add("loaded");
+        }
+        keepBottomPinned();
+      });
+
+      if (imageNode.complete && imageNode.naturalWidth > 0) {
+        markMessageImageLoaded(imageNode);
+        keepBottomPinned();
+        return;
+      }
+
+      pendingImages.push(imageNode);
+    });
+  }
+
+  return pendingImages;
+};
+
+const renderComposerAttachmentPreview = () => {
+  if (typeof composerAttachmentPreview !== 'undefined' && composerAttachmentPreview) {
+    composerAttachmentPreview.classList.remove("visible");
+  }
+  if (typeof composerAttachmentImage !== 'undefined' && composerAttachmentImage) {
+    composerAttachmentImage.removeAttribute("src");
+  }
+  if (typeof composerAttachmentMeta !== 'undefined' && composerAttachmentMeta) {
+    composerAttachmentMeta.textContent = "";
+  }
+  if (typeof getWin().syncComposerState === 'function') {
+    getWin().syncComposerState();
+  }
+};
+
+const closeAttachmentModal = () => {
+  if (typeof attachmentModal === 'undefined' || !attachmentModal) {
+    return;
+  }
+  const attachmentModalContent = attachmentModal.querySelector(".attachment-modal-content");
+  if (attachmentModalContent instanceof HTMLElement) {
+    getWin().pendingAttachmentModalScrollTop = attachmentModalContent.scrollTop || 0;
+  }
+  if (typeof attachmentModalEmojiPicker !== 'undefined' && attachmentModalEmojiPicker) {
+    attachmentModalEmojiPicker.classList.remove("open");
+    attachmentModalEmojiPicker.setAttribute("aria-hidden", "true");
+  }
+  attachmentModal.classList.remove("open");
+  attachmentModal.setAttribute("aria-hidden", "true");
+};
+
+const clearPendingImageAttachment = (options: any = {}) => {
+  if (typeof attachmentModal === 'undefined' || !attachmentModal) {
+    return;
+  }
+  const preservePreviewUrls = new Set(options.preservePreviewUrls || []);
+  const closingAttachments = getWin().pendingImageAttachments.concat(getWin().pendingFileAttachments);
+  getWin().attachmentModalCleanupToken += 1;
+  const cleanupToken = getWin().attachmentModalCleanupToken;
+  const attachmentModalShell = attachmentModal.querySelector(".attachment-modal-shell");
+
+  if (getWin().attachmentModalCleanupTimer) {
+    window.clearTimeout(getWin().attachmentModalCleanupTimer);
+    getWin().attachmentModalCleanupTimer = null;
+  }
+
+  getWin().pendingImageAttachments = [];
+  getWin().pendingImageAttachmentIndex = 0;
+  getWin().pendingFileAttachments = [];
+  getWin().pendingFileAttachmentIndex = 0;
+  getWin().attachmentModalMode = "image";
+  getWin().pendingImageCaption = "";
+  getWin().pendingAttachmentModalScrollTop = 0;
+  if (typeof composerFileInput !== 'undefined' && composerFileInput) {
+    composerFileInput.value = "";
+  }
+  if (typeof attachmentModalCaption !== 'undefined' && attachmentModalCaption) {
+    attachmentModalCaption.value = "";
+  }
+  if (typeof attachmentModalEmojiPicker !== 'undefined' && attachmentModalEmojiPicker) {
+    attachmentModalEmojiPicker.classList.remove("open");
+    attachmentModalEmojiPicker.setAttribute("aria-hidden", "true");
+  }
+  if (attachmentModalShell) {
+    attachmentModalShell.classList.remove("is-file-mode");
+    attachmentModalShell.classList.remove("is-multi");
+    attachmentModalShell.classList.add("is-single");
+  }
+  attachmentModal.classList.remove("open");
+  attachmentModal.setAttribute("aria-hidden", "true");
+  if (typeof attachmentModalPrev !== 'undefined' && attachmentModalPrev) {
+    attachmentModalPrev.hidden = true;
+  }
+  if (typeof attachmentModalNext !== 'undefined' && attachmentModalNext) {
+    attachmentModalNext.hidden = true;
+  }
+  renderComposerAttachmentPreview();
+
+  getWin().attachmentModalCleanupTimer = window.setTimeout(() => {
+    if (cleanupToken !== getWin().attachmentModalCleanupToken || attachmentModal.classList.contains("open")) {
+      return;
+    }
+
+    for (const attachment of closingAttachments) {
+      if (attachment?.previewUrl && !preservePreviewUrls.has(attachment.previewUrl)) {
+        URL.revokeObjectURL(attachment.previewUrl);
+      }
+    }
+
+    if (typeof attachmentModalImage !== 'undefined' && attachmentModalImage) {
+      attachmentModalImage.removeAttribute("src");
+      attachmentModalImage.alt = "";
+      attachmentModalImage.parentElement?.classList.remove("loading");
+    }
+    if (typeof attachmentModalStrip !== 'undefined' && attachmentModalStrip) {
+      attachmentModalStrip.innerHTML = "";
+    }
+  }, 220);
+};
+
+const moveAttachmentModal = (direction: number) => {
+  if (getWin().attachmentModalMode !== "image" || getWin().pendingImageAttachments.length < 2) {
+    return;
+  }
+
+  getWin().pendingImageAttachmentIndex = (getWin().pendingImageAttachmentIndex + direction + getWin().pendingImageAttachments.length) % getWin().pendingImageAttachments.length;
+  renderAttachmentModal();
+};
+
+const renderAttachmentModal = (options: any = {}) => {
+  if (typeof attachmentModal === 'undefined' || !attachmentModal) {
+    return;
+  }
+  const attachmentModalShell = attachmentModal.querySelector(".attachment-modal-shell");
+  const attachmentModalContent = attachmentModal.querySelector(".attachment-modal-content");
+  const preserveScroll = Boolean(options.preserveScroll);
+
+  if (getWin().attachmentModalMode === "file") {
+    const attachment = getWin().pendingFileAttachments[getWin().pendingFileAttachmentIndex];
+
+    if (!attachment) {
+      attachmentModal.classList.remove("open");
+      attachmentModal.setAttribute("aria-hidden", "true");
+      return;
+    }
+
+    const hasLongFileList = getWin().pendingFileAttachments.length > 6;
+    if (attachmentModalShell) {
+      attachmentModalShell.classList.add("is-file-mode");
+      attachmentModalShell.classList.toggle("is-multi", hasLongFileList);
+      attachmentModalShell.classList.toggle("is-single", !hasLongFileList);
+    }
+
+    if (typeof attachmentModalTitle !== 'undefined' && attachmentModalTitle) {
+      attachmentModalTitle.textContent = formatFileCount(getWin().pendingFileAttachments.length);
+    }
+    if (typeof attachmentModalCaption !== 'undefined' && attachmentModalCaption) {
+      attachmentModalCaption.value = getWin().pendingImageCaption;
+    }
+    if (typeof attachmentModalPrev !== 'undefined' && attachmentModalPrev) {
+      attachmentModalPrev.hidden = true;
+    }
+    if (typeof attachmentModalNext !== 'undefined' && attachmentModalNext) {
+      attachmentModalNext.hidden = true;
+    }
+    if (typeof attachmentModalStrip !== 'undefined' && attachmentModalStrip) {
+      attachmentModalStrip.hidden = false;
+    }
+    if (typeof attachmentModalImage !== 'undefined' && attachmentModalImage) {
+      attachmentModalImage.removeAttribute("src");
+      attachmentModalImage.alt = "";
+      attachmentModalImage.parentElement?.classList.remove("loading");
+    }
+    if (typeof attachmentModalStrip !== 'undefined' && attachmentModalStrip) {
+      attachmentModalStrip.innerHTML = getWin().pendingFileAttachments.map((entry: any, index: number) => {
+        const duration = formatDuration(Number(entry.durationSeconds) || 0);
+        const size = formatBytes(Number(entry.file?.size) || 0);
+        const meta = duration && size
+          ? (duration + " • " + size)
+          : (duration || size || "Audio file");
+        return '<button class="attachment-modal-file-item' + (index === getWin().pendingFileAttachmentIndex ? ' active' : '') + '" type="button" data-file-attachment-index="' + index + '">' +
+          '<span class="attachment-modal-file-icon" aria-hidden="true">▶</span>' +
+          '<span class="attachment-modal-file-copy">' +
+            '<span class="attachment-modal-file-name">' + escapeHtml(entry.file?.name || "Audio file") + '</span>' +
+            '<span class="attachment-modal-file-meta">' + escapeHtml(meta) + '</span>' +
+          '</span>' +
+        '</button>';
+      }).join("");
+    }
+
+    attachmentModal.classList.add("open");
+    attachmentModal.setAttribute("aria-hidden", "false");
+
+    if (typeof attachmentModalStrip !== 'undefined' && attachmentModalStrip) {
+      attachmentModalStrip.querySelectorAll("[data-file-attachment-index]").forEach((button) => {
+        button.addEventListener("click", (event) => {
+          event.preventDefault();
+          event.stopPropagation();
+          getWin().pendingFileAttachmentIndex = Number(button.getAttribute("data-file-attachment-index")) || 0;
+          renderAttachmentModal();
+        });
+      });
+    }
+
+    if (preserveScroll && attachmentModalContent instanceof HTMLElement) {
+      attachmentModalContent.scrollTop = getWin().pendingAttachmentModalScrollTop;
+    } else if (attachmentModalContent instanceof HTMLElement) {
+      attachmentModalContent.scrollTop = 0;
+    }
+    return;
+  }
+
+  const attachment = getWin().pendingImageAttachments[getWin().pendingImageAttachmentIndex];
+
+  if (!attachment) {
+    attachmentModal.classList.remove("open");
+    attachmentModal.setAttribute("aria-hidden", "true");
+    return;
+  }
+  const isMultiSelection = getWin().pendingImageAttachments.length > 1;
+  if (attachmentModalShell) {
+    attachmentModalShell.classList.remove("is-file-mode");
+    attachmentModalShell.classList.toggle("is-multi", isMultiSelection);
+    attachmentModalShell.classList.toggle("is-single", !isMultiSelection);
+  }
+
+  if (typeof attachmentModalTitle !== 'undefined' && attachmentModalTitle) {
+    attachmentModalTitle.textContent = formatPhotoCount(getWin().pendingImageAttachments.length);
+  }
+  if (typeof attachmentModalImage !== 'undefined' && attachmentModalImage) {
+    attachmentModalImage.parentElement?.classList.add("loading");
+    attachmentModalImage.src = attachment.previewUrl;
+    attachmentModalImage.alt = attachment.file.name || "Photo";
+    attachmentModalImage.onload = () => {
+      attachmentModalImage.parentElement?.classList.remove("loading");
+    };
+    attachmentModalImage.onerror = () => {
+      attachmentModalImage.parentElement?.classList.remove("loading");
+    };
+    if (attachmentModalImage.complete && attachmentModalImage.naturalWidth > 0) {
+      attachmentModalImage.parentElement?.classList.remove("loading");
+    }
+  }
+  if (typeof attachmentModalCaption !== 'undefined' && attachmentModalCaption) {
+    attachmentModalCaption.value = getWin().pendingImageCaption;
+  }
+  if (typeof attachmentModalPrev !== 'undefined' && attachmentModalPrev) {
+    attachmentModalPrev.hidden = true;
+  }
+  if (typeof attachmentModalNext !== 'undefined' && attachmentModalNext) {
+    attachmentModalNext.hidden = true;
+  }
+  if (typeof attachmentModalStrip !== 'undefined' && attachmentModalStrip) {
+    attachmentModalStrip.hidden = getWin().pendingImageAttachments.length < 2;
+    attachmentModalStrip.innerHTML = getWin().pendingImageAttachments.map((entry: any, index: number) => {
+      return '<button class="attachment-modal-thumb' + (index === getWin().pendingImageAttachmentIndex ? ' active' : '') + '" type="button" data-attachment-index="' + index + '">' +
+        '<img src="' + escapeHtml(entry.previewUrl) + '" alt="' + escapeHtml(entry.file.name || "Photo") + '" />' +
+      '</button>';
+    }).join("");
+  }
+
+  attachmentModal.classList.add("open");
+  attachmentModal.setAttribute("aria-hidden", "false");
+
+  if (typeof attachmentModalStrip !== 'undefined' && attachmentModalStrip) {
+    attachmentModalStrip.querySelectorAll("[data-attachment-index]").forEach((button) => {
+      button.addEventListener("click", () => {
+        getWin().pendingImageAttachmentIndex = Number(button.getAttribute("data-attachment-index")) || 0;
+        renderAttachmentModal();
+      });
+    });
+  }
+  if (preserveScroll && attachmentModalContent instanceof HTMLElement) {
+    attachmentModalContent.scrollTop = getWin().pendingAttachmentModalScrollTop;
+  } else if (typeof attachmentModalStrip !== 'undefined' && attachmentModalStrip) {
+    const activeThumb = attachmentModalStrip.querySelector('[data-attachment-index="' + getWin().pendingImageAttachmentIndex + '"]');
+    if (activeThumb instanceof HTMLElement) {
+      activeThumb.scrollIntoView({
+        block: "nearest",
+        inline: "nearest"
+      });
+    }
+  }
+};
+
+const openAttachmentModal = (index: number = 0, options: any = {}) => {
+  if (getWin().attachmentModalMode === "file") {
+    if (!getWin().pendingFileAttachments.length) {
+      return;
+    }
+  } else if (!getWin().pendingImageAttachments.length) {
+    return;
+  }
+
+  getWin().attachmentModalCleanupToken += 1;
+  if (getWin().attachmentModalCleanupTimer) {
+    window.clearTimeout(getWin().attachmentModalCleanupTimer);
+    getWin().attachmentModalCleanupTimer = null;
+  }
+
+  if (getWin().attachmentModalMode === "file") {
+    getWin().pendingFileAttachmentIndex = Math.max(0, Math.min(index, getWin().pendingFileAttachments.length - 1));
+  } else {
+    getWin().pendingImageAttachmentIndex = Math.max(0, Math.min(index, getWin().pendingImageAttachments.length - 1));
+  }
+  renderAttachmentModal({
+    preserveScroll: Boolean(options.preserveScroll)
+  });
+};
+
+const addPendingImageAttachments = async (files: FileList | File[]) => {
+  const validFiles = Array.from(files || []).filter((file) => file && String(file.type || "").startsWith("image/"));
+
+  if (!validFiles.length) {
+    showToast("Only images are supported.", "error");
+    return;
+  }
+
+  const availableSlots = Math.max(0, getMaxMediaAttachments() - getWin().pendingImageAttachments.length);
+
+  if (!availableSlots) {
+    showToast("You can select up to 500 photos at once.", "error");
+    return;
+  }
+
+  const acceptedFiles = validFiles.slice(0, availableSlots);
+
+  if (acceptedFiles.length < validFiles.length) {
+    showToast("Selection limit: 500 photos.", "error");
+  }
+
+  const nextAttachments = await Promise.all(acceptedFiles.map(async (file) => {
+    const previewUrl = URL.createObjectURL(file);
+    let measured = null;
+    if (typeof measureImageUrl === 'function') {
+      measured = await measureImageUrl(previewUrl);
+    }
+    return {
+      id: "draft_" + Date.now() + "_" + Math.random().toString(36).slice(2, 8),
+      file,
+      previewUrl,
+      naturalWidth: Number(measured?.naturalWidth) || 0,
+      naturalHeight: Number(measured?.naturalHeight) || 0
+    };
+  }));
+
+  if (!getWin().pendingImageCaption && typeof composerInput !== 'undefined' && composerInput.value.trim()) {
+    getWin().pendingImageCaption = composerInput.value.trim();
+    composerInput.value = "";
+    if (typeof getWin().syncComposerState === 'function') {
+      getWin().syncComposerState();
+    }
+  }
+
+  getWin().pendingImageAttachments = getWin().pendingImageAttachments.concat(nextAttachments);
+  getWin().attachmentModalMode = "image";
+  renderComposerAttachmentPreview();
+  openAttachmentModal(getWin().pendingImageAttachments.length - nextAttachments.length);
+};
+
+const setPendingImageAttachment = (file: File) => {
+  void addPendingImageAttachments([file]);
+};
+
+const addPendingFileAttachments = async (files: FileList | File[]) => {
+  const validFiles = Array.from(files || []).filter((file) => file && String(file.type || "").startsWith("audio/"));
+
+  if (!validFiles.length) {
+    showToast("Only audio files are supported in File mode.", "error");
+    return;
+  }
+
+  const availableSlots = Math.max(0, getMaxMediaAttachments() - getWin().pendingFileAttachments.length);
+
+  if (!availableSlots) {
+    showToast("You can select up to 500 files at once.", "error");
+    return;
+  }
+
+  const acceptedFiles = validFiles.slice(0, availableSlots);
+  if (acceptedFiles.length < validFiles.length) {
+    showToast("Selection limit: 500 files.", "error");
+  }
+
+  const nextAttachments = await Promise.all(acceptedFiles.map(async (file) => {
+    const previewUrl = URL.createObjectURL(file);
+    let durationSeconds = 0;
+    if (typeof measureAudioDuration === 'function') {
+      durationSeconds = await measureAudioDuration(previewUrl);
+    }
+    return {
+      id: "file_" + Date.now() + "_" + Math.random().toString(36).slice(2, 8),
+      file,
+      previewUrl,
+      durationSeconds: Number(durationSeconds) || 0
+    };
+  }));
+
+  if (!getWin().pendingImageCaption && typeof composerInput !== 'undefined' && composerInput.value.trim()) {
+    getWin().pendingImageCaption = composerInput.value.trim();
+    composerInput.value = "";
+    if (typeof getWin().syncComposerState === 'function') {
+      getWin().syncComposerState();
+    }
+  }
+
+  getWin().pendingFileAttachments = getWin().pendingFileAttachments.concat(nextAttachments);
+  getWin().attachmentModalMode = "file";
+  renderComposerAttachmentPreview();
+  openAttachmentModal(getWin().pendingFileAttachments.length - nextAttachments.length);
+};
+
+// Expose APIs to window
+getWin().getConstrainedImageSize = getConstrainedImageSize;
+getWin().getImageShellStyle = getImageShellStyle;
+getWin().hydrateMessageImages = hydrateMessageImages;
+getWin().clearPendingImageAttachment = clearPendingImageAttachment;
+getWin().closeAttachmentModal = closeAttachmentModal;
+getWin().openAttachmentModal = openAttachmentModal;
+getWin().moveAttachmentModal = moveAttachmentModal;
+getWin().renderAttachmentModal = renderAttachmentModal;
+getWin().addPendingImageAttachments = addPendingImageAttachments;
+getWin().setPendingImageAttachment = setPendingImageAttachment;
+getWin().addPendingFileAttachments = addPendingFileAttachments;
+
+// Immediately hydrate any images already in the DOM (as this module is lazy-loaded)
+try {
+  hydrateMessageImages({ lockToken: 0 });
+} catch (err) {
+  console.warn("Failed to run initial image hydration:", err);
+}

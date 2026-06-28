@@ -3,6 +3,11 @@ package su.thegrapht.app
 import org.json.JSONObject
 import java.util.Locale
 
+fun JSONObject.optStringClean(name: String): String {
+    val value = optString(name, "")
+    return if (value == "null") "" else value
+}
+
 data class DialogItem(
     val id: String,
     val publicId: String,
@@ -10,23 +15,27 @@ data class DialogItem(
     val title: String,
     val subtitle: String,
     val preview: String,
+    val lastMessageSenderName: String,
     val peerUserId: String,
     val peerLastSeenAt: String,
     val unreadCount: Int,
-    val lastMessageCreatedAt: String
+    val lastMessageCreatedAt: String,
+    val avatarUrl: String
 ) {
     companion object {
         fun fromJson(json: JSONObject?) = DialogItem(
-            id = json?.optString("id").orEmpty(),
-            publicId = json?.optString("publicId").orEmpty(),
-            type = json?.optString("type").orEmpty(),
-            title = json?.optString("title").orEmpty(),
-            subtitle = json?.optString("subtitle").orEmpty(),
-            preview = json?.optString("lastMessagePreview").orEmpty(),
-            peerUserId = json?.optString("peerUserId").orEmpty(),
-            peerLastSeenAt = json?.optString("peerLastSeenAt").orEmpty(),
+            id = json?.optStringClean("id").orEmpty(),
+            publicId = json?.optStringClean("publicId").orEmpty(),
+            type = json?.optStringClean("type").orEmpty(),
+            title = json?.optStringClean("title").orEmpty(),
+            subtitle = json?.optStringClean("subtitle").orEmpty(),
+            preview = json?.optStringClean("lastMessagePreview").orEmpty(),
+            lastMessageSenderName = json?.optStringClean("lastMessageSenderName").orEmpty(),
+            peerUserId = json?.optStringClean("peerUserId").orEmpty(),
+            peerLastSeenAt = json?.optStringClean("peerLastSeenAt").orEmpty(),
             unreadCount = json?.optInt("unreadCount", 0) ?: 0,
-            lastMessageCreatedAt = json?.optString("lastMessageCreatedAt").orEmpty()
+            lastMessageCreatedAt = json?.optStringClean("lastMessageCreatedAt").orEmpty(),
+            avatarUrl = json?.optStringClean("avatarUrl").orEmpty()
         )
     }
 }
@@ -42,7 +51,10 @@ data class MessageItem(
     val attachmentMime: String,
     val albumId: String,
     val albumIndex: Int,
-    val albumSize: Int
+    val albumSize: Int,
+    val replyToMessageId: String,
+    val replyToSenderName: String,
+    val replyToBody: String
 ) {
     val normalizedType: String
         get() = type.trim().toLowerCase(Locale.US)
@@ -58,17 +70,20 @@ data class MessageItem(
 
     companion object {
         fun fromJson(json: JSONObject?) = MessageItem(
-            id = json?.optString("id").orEmpty(),
-            body = json?.optString("body").orEmpty(),
-            senderId = json?.optString("senderId").orEmpty(),
-            senderName = json?.optString("senderName").orEmpty(),
-            createdAt = json?.optString("createdAt").orEmpty(),
-            type = json?.optString("type").orEmpty(),
-            mediaUrl = json?.optString("mediaUrl").orEmpty(),
-            attachmentMime = json?.optString("attachmentMime").orEmpty(),
-            albumId = json?.optString("albumId").orEmpty(),
+            id = json?.optStringClean("id").orEmpty(),
+            body = json?.optStringClean("body").orEmpty(),
+            senderId = json?.optStringClean("senderId").orEmpty(),
+            senderName = json?.optStringClean("senderName").orEmpty(),
+            createdAt = json?.optStringClean("createdAt").orEmpty(),
+            type = json?.optStringClean("type").orEmpty(),
+            mediaUrl = json?.optStringClean("mediaUrl").orEmpty(),
+            attachmentMime = json?.optStringClean("attachmentMime").orEmpty(),
+            albumId = json?.optStringClean("albumId").orEmpty(),
             albumIndex = json?.optInt("albumIndex", -1) ?: -1,
-            albumSize = json?.optInt("albumSize", 0) ?: 0
+            albumSize = json?.optInt("albumSize", 0) ?: 0,
+            replyToMessageId = json?.optStringClean("replyToMessageId").orEmpty(),
+            replyToSenderName = json?.optStringClean("replyToSenderName").orEmpty(),
+            replyToBody = json?.optStringClean("replyToBody").orEmpty()
         )
     }
 }
@@ -80,9 +95,9 @@ data class SearchUserItem(
 ) {
     companion object {
         fun fromJson(json: JSONObject?) = SearchUserItem(
-            id = json?.optString("id").orEmpty(),
-            name = json?.optString("name").orEmpty(),
-            username = json?.optString("username").orEmpty()
+            id = json?.optStringClean("id").orEmpty(),
+            name = json?.optStringClean("name").orEmpty(),
+            username = json?.optStringClean("username").orEmpty()
         )
     }
 }

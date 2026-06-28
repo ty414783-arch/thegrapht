@@ -78,6 +78,7 @@ export const createRequestHandler = ({
   privacyHtml,
   clientScript,
   clientScriptUrl,
+  configScriptJs,
   baseSecurityHeaders,
   htmlSecurityHeaders,
   landingSecurityHeaders,
@@ -95,8 +96,6 @@ export const createRequestHandler = ({
   inter700Buffer,
   inter800Url,
   inter800Buffer,
-  lucideUrl,
-  lucideBuffer,
   logoUrl,
   logoBuffer,
   emojiIconUrl,
@@ -251,6 +250,15 @@ export const createRequestHandler = ({
     return;
   }
 
+  if (request.url === "/config.js") {
+    sendTextResponse(request, response, 200, {
+      "Content-Type": "application/javascript; charset=utf-8",
+      "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
+      ...baseSecurityHeaders
+    }, configScriptJs);
+    return;
+  }
+
   if (request.url === clientScriptUrl || request.url === "/app.js") {
     const isVersionedClientScript = request.url === clientScriptUrl;
 
@@ -390,8 +398,7 @@ export const createRequestHandler = ({
     [inter500Url, inter500Buffer],
     [inter600Url, inter600Buffer],
     [inter700Url, inter700Buffer],
-    [inter800Url, inter800Buffer],
-    [lucideUrl, lucideBuffer]
+    [inter800Url, inter800Buffer]
   ]);
 
   if (fontResponses.has(request.url)) {

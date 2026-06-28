@@ -56,10 +56,10 @@ const inter500Url = "assets/fonts/inter-500.ttf";
 const inter600Url = "assets/fonts/inter-600.ttf";
 const inter700Url = "assets/fonts/inter-700.ttf";
 const inter800Url = "assets/fonts/inter-800.ttf";
-const materialSymbolsRounded400Url = "assets/fonts/material-symbols-rounded-400.ttf";
-const materialSymbolsRounded500Url = "assets/fonts/material-symbols-rounded-500.ttf";
-const materialSymbolsRounded600Url = "assets/fonts/material-symbols-rounded-600.ttf";
-const materialSymbolsRounded700Url = "assets/fonts/material-symbols-rounded-700.ttf";
+const materialSymbolsRounded400Url = "";
+const materialSymbolsRounded500Url = "";
+const materialSymbolsRounded600Url = "";
+const materialSymbolsRounded700Url = "";
 const messageSoundUrl = "assets/sounds/message-sound.mp3";
 const sendLocalSoundUrl = "assets/sounds/send-local.mp3";
 const outgoingCallRingtoneUrl = "assets/sounds/cell-phone-ring.mp3";
@@ -67,10 +67,8 @@ const incomingCallRingtoneUrl = "assets/sounds/telegram-zvonok-pk.mp3";
 const searchEmptyVideoUrl = "assets/search-empty.mp4";
 const manifestUrl = "manifest.json";
 const serviceWorkerUrl = "sw.js";
-
-// API always points to the live backend (works online; offline is gracefully handled by the app itself)
-const apiBaseUrl = "https://web.thegrapht.su/api";
-const wsBaseUrl = "wss://web.thegrapht.su/ws";
+const apiBaseUrl = "https://api.thegrapht.su";
+const wsBaseUrl = "wss://ws.thegrapht.su";
 
 // ── import website modules ───────────────────────────────────────────────────
 const { buildHtml } = await import(`${FRONTEND_SRC}/page-template.js`);
@@ -85,7 +83,20 @@ const uiFlags = {
 };
 
 // ── build the app JS ─────────────────────────────────────────────────────────
-const clientScript = buildClientScript({
+let compiledScript = "";
+const compiledAppPath = path.resolve(__dirname, "../frontend/dist/app.js");
+try {
+  if (fs.existsSync(compiledAppPath)) {
+    compiledScript = fs.readFileSync(compiledAppPath, "utf8");
+    console.log("Loaded compiled Preact client script from ../frontend/dist/app.js");
+  } else {
+    console.warn("Compiled Preact client script NOT found at:", compiledAppPath);
+  }
+} catch (err) {
+  console.warn("Failed to read compiled client script:", err);
+}
+
+const fallbackScript = buildClientScript({
   apiBaseUrl,
   appleEmojiAssetBaseUrl,
   outgoingCallRingtoneUrl,
@@ -99,6 +110,8 @@ const clientScript = buildClientScript({
   uiFlags,
   wsBaseUrl
 });
+
+const clientScript = compiledScript ? compiledScript + "\n" + fallbackScript : fallbackScript;
 
 const clientScriptHash = crypto.createHash("sha256").update(clientScript).digest("hex").slice(0, 12);
 const clientScriptFilename = `app.${clientScriptHash}.js`;
@@ -129,13 +142,68 @@ const html = buildHtml({
 const TITLEBAR_CSS = `<style id="desktop-titlebar-css">
 :root { --border-subtle: rgba(255,255,255,0.06); }
 .native-titlebar {
-  height: 32px; display: flex; align-items: center;
+  height: 38px; display: flex; align-items: center;
   justify-content: space-between;
   background: rgba(16,19,27,0.97);
   border-bottom: 1px solid var(--border-subtle);
   -webkit-app-region: drag; -webkit-user-select: none;
   user-select: none; flex-shrink: 0; z-index: 999999;
   position: fixed; top: 0; left: 0; right: 0;
+}
+.titlebar-title-container {
+  position: absolute;
+  left: 50%;
+  top: 46%;
+  transform: translate(-50%, -50%);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  -webkit-app-region: drag;
+  flex-shrink: 0;
+}
+.tb-discord-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: #5865F2;
+  flex-shrink: 0;
+}
+.tb-avatar-container {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+/* Style overrides for standard avatars placed inside titlebar */
+.tb-avatar-container .dialog-avatar {
+  width: 18px !important;
+  height: 18px !important;
+  min-width: 18px !important;
+  min-height: 18px !important;
+  font-size: 8px !important;
+  border-radius: 50% !important;
+  margin: 0 !important;
+  box-shadow: none !important;
+  border: none !important;
+}
+.tb-avatar-container .dialog-avatar img,
+.tb-avatar-container .dialog-avatar svg {
+  width: 18px !important;
+  height: 18px !important;
+}
+.tb-avatar-container .dialog-avatar .dialog-avatar-presence,
+.tb-avatar-container .dialog-avatar .dialog-avatar-secret {
+  display: none !important;
+}
+.tb-title-text {
+  color: #eff4ff;
+  font-weight: 700;
+  font-size: 12px;
+  font-family: inherit;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 280px;
 }
 .titlebar-drag-zone { flex: 1; height: 100%; }
 .titlebar-controls {
@@ -150,15 +218,15 @@ const TITLEBAR_CSS = `<style id="desktop-titlebar-css">
 }
 .titlebar-btn:hover { background: rgba(255,255,255,0.08); color: #e8eeff; }
 .titlebar-btn.close:hover { background: #e81123; color: #fff; }
-body { padding-top: 32px; }
-#page-root { height: calc(100vh - 32px) !important; }
-
+body { padding-top: 38px; }
+#page-root { height: calc(100vh - 38px) !important; }
+ 
 /* Desktop-specific overrides */
 .auth-faq-link { display: none !important; }
-
+ 
 .page.workspace-mode .view {
-  height: calc(100vh - 32px) !important;
-  max-height: calc(100vh - 32px) !important;
+  height: calc(100vh - 38px) !important;
+  max-height: calc(100vh - 38px) !important;
   width: 100vw !important;
   max-width: 100vw !important;
 }
@@ -167,34 +235,118 @@ body { padding-top: 32px; }
   margin-bottom: 12px !important;
 }
 
-.sidebar-update-btn {
+.sidebar-update-container {
   margin: 12px 16px 8px;
-  padding: 10px 14px;
+  padding: 12px;
+  border-radius: 12px;
+  border: 1px solid rgba(99, 102, 241, 0.3);
+  background: rgba(15, 23, 42, 0.65);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.25);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  position: relative;
+  overflow: hidden;
+  box-sizing: border-box;
+  width: calc(100% - 32px);
+  transform: translateY(30px);
+  opacity: 0;
+  transition: transform 0.6s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.6s ease;
+}
+
+.sidebar-update-container.show {
+  transform: translateY(0);
+  opacity: 1;
+}
+
+.sidebar-update-content {
   display: flex;
   align-items: center;
-  justify-content: center;
-  gap: 8px;
-  border-radius: 12px;
-  border: 1px solid rgba(88, 101, 242, 0.4);
-  background: rgba(88, 101, 242, 0.1);
-  color: #eff4ff;
-  font-family: inherit;
+  justify-content: space-between;
+  gap: 12px;
+  z-index: 2;
+}
+
+.sidebar-update-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 1;
+}
+
+.sidebar-update-title {
+  color: #f1f5f9;
+  font-weight: 600;
   font-size: 13px;
-  font-weight: 700;
+}
+
+.sidebar-update-subtitle {
+  color: #94a3b8;
+  font-size: 11px;
+}
+
+.sidebar-update-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.sidebar-update-action-btn {
+  padding: 6px 12px;
+  border-radius: 8px;
+  font-size: 12px;
+  font-weight: 600;
   cursor: pointer;
-  transition: background .15s, border-color .15s;
-  width: calc(100% - 32px);
-  box-sizing: border-box;
+  transition: all 0.2s ease;
+  border: none;
+  font-family: inherit;
 }
 
-.sidebar-update-btn:hover:not(:disabled) {
-  background: rgba(88, 101, 242, 0.2);
-  border-color: rgba(88, 101, 242, 0.6);
+.sidebar-update-action-btn.download {
+  background: linear-gradient(135deg, #6366f1 0%, #4f46e5 100%);
+  color: #ffffff;
+  box-shadow: 0 2px 6px rgba(99, 102, 241, 0.3);
 }
 
-.sidebar-update-btn:disabled {
-  opacity: 0.7;
+.sidebar-update-action-btn.download:hover:not(:disabled) {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(99, 102, 241, 0.4);
+}
+
+.sidebar-update-action-btn.cancel {
+  background: rgba(244, 63, 94, 0.1);
+  color: #fb7185;
+  border: 1px solid rgba(244, 63, 94, 0.2);
+}
+
+.sidebar-update-action-btn.cancel:hover:not(:disabled) {
+  background: rgba(244, 63, 94, 0.2);
+}
+
+.sidebar-update-action-btn:disabled {
+  opacity: 0.5;
   cursor: not-allowed;
+  transform: none !important;
+  box-shadow: none !important;
+}
+
+.sidebar-update-progress-wrap {
+  height: 4px;
+  background: rgba(255, 255, 255, 0.08);
+  border-radius: 2px;
+  overflow: hidden;
+  display: none;
+  width: 100%;
+  z-index: 2;
+}
+
+.sidebar-update-progress-bar {
+  height: 100%;
+  width: 0%;
+  background: linear-gradient(90deg, #6366f1, #a855f7);
+  transition: width 0.1s ease;
 }
 
 .animate-spin {
@@ -213,13 +365,31 @@ body { padding-top: 32px; }
 </style>`;
 
 // inject titlebar CSS before </head> and replace the title tag to match premium casing
+// Also inject __THEGRAPHT_CONFIG__ so bootstrap.ts can read appleEmojiAssetBaseUrl
+const DESKTOP_CONFIG_SCRIPT = `<script>window.__THEGRAPHT_CONFIG__ = {
+  apiBaseUrl: ${JSON.stringify(apiBaseUrl)},
+  appleEmojiAssetBaseUrl: ${JSON.stringify(appleEmojiAssetBaseUrl)},
+  outgoingCallRingtoneUrl: ${JSON.stringify(outgoingCallRingtoneUrl)},
+  incomingCallRingtoneUrl: ${JSON.stringify(incomingCallRingtoneUrl)},
+  logoDataUrl: ${JSON.stringify(logoUrl)},
+  messageSoundUrl: ${JSON.stringify(messageSoundUrl)},
+  searchEmptyVideoUrl: ${JSON.stringify(searchEmptyVideoUrl)},
+  sendLocalSoundUrl: ${JSON.stringify(sendLocalSoundUrl)},
+  serviceWorkerUrl: ${JSON.stringify(serviceWorkerUrl)},
+  uiFlags: ${JSON.stringify(uiFlags)},
+  wsBaseUrl: ${JSON.stringify(wsBaseUrl)}
+};</script>`;
+
 const htmlWithTitlebar = html
   .replace("<title>TheGraphT Web</title>", "<title>TheGraphT</title>")
-  .replace("</head>", `${TITLEBAR_CSS}\n</head>`);
+  .replace("</head>", `${TITLEBAR_CSS}\n${DESKTOP_CONFIG_SCRIPT}\n</head>`);
 
 // inject titlebar HTML at start of body
 const TITLEBAR_HTML = `
 <div class="native-titlebar" data-tauri-drag-region="true" aria-label="Window controls">
+  <div class="titlebar-title-container" id="tb-title-container" data-tauri-drag-region="true">
+    <span class="tb-title-text" style="color: #eff4ff; font-weight: 700; font-size: 12px; font-family: inherit;">TheGraphT</span>
+  </div>
   <div class="titlebar-drag-zone" data-tauri-drag-region="true"></div>
   <div class="titlebar-controls">
     <button class="titlebar-btn" id="tb-min" title="Minimize" aria-label="Minimize">
@@ -295,8 +465,16 @@ const TITLEBAR_HTML = `
 
   // Enforce keyboard hotkey blocks
   document.addEventListener('keydown', function(e) {
-    if (e.key === 'F5' || (e.ctrlKey && e.key === 'r') || (e.metaKey && e.key === 'r')) {
+    var key = e.key.toLowerCase();
+    if (
+      e.key === 'F5' || 
+      (e.ctrlKey && key === 'r') || 
+      (e.metaKey && key === 'r') ||
+      (e.ctrlKey && e.shiftKey && key === 'r') ||
+      (e.metaKey && e.shiftKey && key === 'r')
+    ) {
       e.preventDefault();
+      e.stopPropagation();
     }
   });
 
@@ -315,24 +493,81 @@ const TITLEBAR_HTML = `
             if (!match) return;
             var latestVersion = match[1];
             if (latestVersion !== currentVersion) {
-              var btn = document.getElementById("sidebar-update-btn");
-              if (btn) return;
+              var container = document.getElementById("sidebar-update-container");
+              if (container) return;
 
-              btn = document.createElement("button");
-              btn.id = "sidebar-update-btn";
-              btn.className = "sidebar-update-btn";
-              btn.type = "button";
-              btn.innerHTML = '<span class="material-symbols-rounded" aria-hidden="true" style="font-size: 16px;">download</span><span>Update to v' + latestVersion + '</span>';
+              container = document.createElement("div");
+              container.id = "sidebar-update-container";
+              container.className = "sidebar-update-container";
+              
+              container.innerHTML = 
+                '<div class="sidebar-update-content">' +
+                  '<div class="sidebar-update-info">' +
+                    '<span class="sidebar-update-title">Доступно обновление v' + latestVersion + '</span>' +
+                    '<span class="sidebar-update-subtitle" id="sidebar-update-status">Нажмите для загрузки и установки</span>' +
+                  '</div>' +
+                  '<div class="sidebar-update-actions">' +
+                    '<button class="sidebar-update-action-btn download" id="sidebar-update-download-btn">Обновить</button>' +
+                    '<button class="sidebar-update-action-btn cancel" id="sidebar-update-cancel-btn" style="display: none;">Отмена</button>' +
+                  '</div>' +
+                '</div>' +
+                '<div class="sidebar-update-progress-wrap" id="sidebar-update-progress-wrap">' +
+                  '<div class="sidebar-update-progress-bar" id="sidebar-update-progress-bar"></div>' +
+                '</div>';
 
               const sidebar = document.querySelector(".workspace-sidebar");
               if (sidebar) {
-                sidebar.appendChild(btn);
+                sidebar.appendChild(container);
+                // Trigger sliding animation with a small timeout
+                setTimeout(function() {
+                  container.classList.add("show");
+                }, 100);
               }
 
-              btn.addEventListener("click", function() {
-                btn.disabled = true;
-                btn.innerHTML = '<span class="material-symbols-rounded animate-spin" aria-hidden="true" style="font-size: 16px;">autorenew</span><span>Updating...</span>';
+              var downloadBtn = container.querySelector("#sidebar-update-download-btn");
+              var cancelBtn = container.querySelector("#sidebar-update-cancel-btn");
+              var progressWrap = container.querySelector("#sidebar-update-progress-wrap");
+              var progressBar = container.querySelector("#sidebar-update-progress-bar");
+              var statusText = container.querySelector("#sidebar-update-status");
+
+              downloadBtn.addEventListener("click", function() {
+                downloadBtn.style.display = "none";
+                cancelBtn.style.display = "block";
+                progressWrap.style.display = "block";
+                progressBar.style.width = "0%";
+                statusText.textContent = "Подготовка к загрузке...";
                 window.tgDesktop.window.updateApp();
+              });
+
+              cancelBtn.addEventListener("click", function() {
+                cancelBtn.disabled = true;
+                statusText.textContent = "Отмена обновления...";
+                window.tgDesktop.window.cancelUpdate();
+              });
+
+              window.tgDesktop.onUpdateProgress(function(percent) {
+                progressBar.style.width = percent + "%";
+                statusText.textContent = "Загрузка: " + percent + "%";
+              });
+
+              window.tgDesktop.onUpdateCancelled(function() {
+                downloadBtn.style.display = "block";
+                downloadBtn.disabled = false;
+                cancelBtn.style.display = "none";
+                cancelBtn.disabled = false;
+                progressWrap.style.display = "none";
+                progressBar.style.width = "0%";
+                statusText.textContent = "Нажмите для загрузки и установки";
+              });
+
+              window.tgDesktop.onUpdateError(function(message) {
+                downloadBtn.style.display = "block";
+                downloadBtn.disabled = false;
+                cancelBtn.style.display = "none";
+                cancelBtn.disabled = false;
+                progressWrap.style.display = "none";
+                progressBar.style.width = "0%";
+                statusText.textContent = "Ошибка: " + (message || "не удалось загрузить");
               });
             }
           })
@@ -404,10 +639,8 @@ const fontFiles = [
   "fonts/inter-600.ttf",
   "fonts/inter-700.ttf",
   "fonts/inter-800.ttf",
-  "fonts/material-symbols-rounded-400.ttf",
-  "fonts/material-symbols-rounded-500.ttf",
-  "fonts/material-symbols-rounded-600.ttf",
-  "fonts/material-symbols-rounded-700.ttf"
+  "fonts/lucide.ttf",
+  "fonts/lucide.css"
 ];
 for (const f of fontFiles) {
   const dest = path.join(ASSETS_DIR, f);

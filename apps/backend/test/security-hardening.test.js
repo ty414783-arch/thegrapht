@@ -75,8 +75,8 @@ test("frontend html loads external client script instead of inline script", () =
   assert.match(html, /<script src="\/app\.js" defer><\/script>/);
   assert.doesNotMatch(html, /<script>\s*const explicitApiBase/);
   assert.match(html, /id="app-progress"/);
-  assert.match(html, /Material Symbols Rounded/);
-  assert.match(html, /material-symbols-rounded/);
+  assert.match(html, /lucide/);
+  assert.match(html, /lucide-svg/);
 });
 
 test("frontend render templates escape user-controlled attributes and text", () => {

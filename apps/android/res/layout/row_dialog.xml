@@ -26,6 +26,12 @@
             android:textSize="22sp"
             android:textStyle="bold" />
 
+        <su.thegrapht.app.CircleImageView
+            android:id="@+id/rowAvatarImage"
+            android:layout_width="54dp"
+            android:layout_height="54dp"
+            android:visibility="gone" />
+
         <View
             android:id="@+id/rowPresence"
             android:layout_width="14dp"

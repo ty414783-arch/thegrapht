@@ -1,7 +1,9 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
-import { Avatar, formatDateLabel, ripple } from '../lib/utils.jsx';
+import { Avatar, formatDateLabel, getAppleEmojiUrl, ripple } from '../lib/utils.jsx';
 
 const EMOJIS = ['😀','😂','🥰','😍','🤔','😅','😭','🥺','😎','🤩','👍','👎','❤️','🔥','💯','🎉','😮','😡','💀','🙏','✨','🤣','😊','😢','😤','🫡'];
+
+const APPLE_EMOJI_BASE = window.tgDesktop?.config?.appleEmojiAssetBaseUrl || 'https://web.thegrapht.su/assets/emoji/apple-64/';
 
 function SendIcon() {
   return (
@@ -122,6 +124,8 @@ export default function ChatWindow({ dialog, messages, myUserId, wsStatus, onSen
     textareaRef.current?.focus();
   };
 
+  const appleEmojiSrc = (emoji) => getAppleEmojiUrl(emoji, APPLE_EMOJI_BASE);
+
   // Group messages by date
   const groupedMessages = React.useMemo(() => {
     const groups = [];
@@ -217,7 +221,7 @@ export default function ChatWindow({ dialog, messages, myUserId, wsStatus, onSen
               {/* Emojis pick popover card */}
               <div id="emoji-picker" className={`emoji-picker${emojiOpen ? ' open' : ''}`}>
                 <div className="emoji-picker-head">
-                  <span className="emoji-picker-tab" style={{ padding: 0, fontSize: 19, display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>😃</span>
+                  <img className="emoji-picker-tab-image" src={appleEmojiSrc('😀')} alt="" aria-hidden="true" />
                   <span style={{ color: 'rgba(255,255,255,0.3)', fontSize: '13px', fontWeight: '600' }}>Smileys</span>
                 </div>
                 <div className="emoji-picker-body" style={{ display: 'grid', gridTemplateColumns: 'repeat(6, 1fr)', gap: '8px', padding: '10px 0', overflowY: 'auto', maxHeight: '200px' }}>
@@ -229,7 +233,7 @@ export default function ChatWindow({ dialog, messages, myUserId, wsStatus, onSen
                       type="button"
                       title={em}
                     >
-                      {em}
+                      <img className="emoji-button-image" src={appleEmojiSrc(em)} alt={em} loading="lazy" decoding="async" draggable="false" />
                     </button>
                   ))}
                 </div>

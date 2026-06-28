@@ -2,276 +2,146 @@
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:background="@color/tg_white"
-    android:orientation="vertical"
-    android:paddingLeft="14dp"
-    android:paddingTop="14dp"
-    android:paddingRight="14dp"
-    android:paddingBottom="12dp">
+    android:background="?android:attr/windowBackground"
+    android:orientation="horizontal">
 
+    <!-- Sidebar View (default match_parent, will be constrained to fixed width on tablets) -->
     <LinearLayout
+        android:id="@+id/dialogsSidebar"
         android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:gravity="center_vertical"
-        android:orientation="horizontal">
-
-        <su.thegrapht.app.CircleImageView
-            android:layout_width="48dp"
-            android:layout_height="48dp"
-            android:src="@drawable/thegrapht_logo"
-            android:scaleType="centerCrop" />
+        android:layout_height="match_parent"
+        android:background="?android:attr/windowBackground"
+        android:orientation="vertical"
+        android:paddingLeft="14dp"
+        android:paddingTop="14dp"
+        android:paddingRight="14dp"
+        android:paddingBottom="12dp">
 
         <LinearLayout
-            android:layout_width="0dp"
+            android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginLeft="12dp"
-            android:layout_weight="1"
-            android:orientation="vertical">
-
-            <TextView
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="TheGrapht"
-                android:textColor="#2E79C9"
-                android:textSize="22sp"
-                android:textStyle="bold" />
-
-            <TextView
-                android:id="@+id/dialogsUserName"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="2dp"
-                android:textColor="#6E7C8B"
-                android:textSize="13sp" />
-        </LinearLayout>
-
-        <Button
-            android:id="@+id/createGroupButton"
-            android:layout_width="wrap_content"
-            android:layout_height="38dp"
-            android:layout_marginRight="6dp"
-            android:background="@drawable/bg_tab_active"
-            android:text="Группа"
-            android:textAllCaps="false"
-            android:textColor="@color/tg_white"
-            android:textSize="13sp" />
-
-        <Button
-            android:id="@+id/logoutButton"
-            android:layout_width="wrap_content"
-            android:layout_height="38dp"
-            android:background="@drawable/bg_tab_inactive"
-            android:text="Выход"
-            android:textAllCaps="false"
-            android:textColor="#6E7C8B"
-            android:textSize="13sp" />
-    </LinearLayout>
-
-    <EditText
-        android:id="@+id/dialogsSearch"
-        android:layout_width="match_parent"
-        android:layout_height="46dp"
-        android:layout_marginTop="12dp"
-        android:background="@drawable/bg_input_tg"
-        android:hint="🔍 Поиск чатов и людей"
-        android:paddingLeft="18dp"
-        android:paddingRight="18dp"
-        android:textColor="#1F1F1F"
-        android:textColorHint="#94A3B8"
-        android:textSize="15sp"
-        android:singleLine="true" />
-
-    <!-- Premium Category Tabs Bar -->
-    <HorizontalScrollView
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:layout_marginTop="12dp"
-        android:scrollbars="none">
-
-        <LinearLayout
-            android:layout_width="wrap_content"
-            android:layout_height="36dp"
             android:gravity="center_vertical"
             android:orientation="horizontal">
 
+            <su.thegrapht.app.CircleImageView
+                android:layout_width="48dp"
+                android:layout_height="48dp"
+                android:src="@drawable/thegrapht_logo"
+                android:scaleType="centerCrop" />
+
             <LinearLayout
-                android:id="@+id/tabAll"
-                android:layout_width="wrap_content"
-                android:layout_height="match_parent"
-                android:background="@drawable/bg_tab_active"
-                android:clickable="true"
-                android:focusable="true"
-                android:gravity="center"
-                android:layout_marginRight="8dp"
-                android:paddingLeft="14dp"
-                android:paddingRight="14dp">
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_marginLeft="12dp"
+                android:layout_weight="1"
+                android:orientation="vertical">
 
                 <TextView
-                    android:id="@+id/tabAllText"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:text="Все"
-                    android:textColor="@color/tg_white"
-                    android:textSize="13sp"
+                    android:text="TheGrapht"
+                    android:textColor="@color/tg_primary"
+                    android:textSize="22sp"
                     android:textStyle="bold" />
 
                 <TextView
-                    android:id="@+id/tabAllBadge"
+                    android:id="@+id/dialogsUserName"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:layout_marginLeft="6dp"
-                    android:background="@drawable/bg_tab_badge_active"
-                    android:gravity="center"
-                    android:minWidth="18dp"
-                    android:minHeight="18dp"
-                    android:paddingLeft="4dp"
-                    android:paddingRight="4dp"
-                    android:text="0"
-                    android:textColor="#2E79C9"
-                    android:textSize="10sp"
-                    android:textStyle="bold" />
-            </LinearLayout>
-
-            <LinearLayout
-                android:id="@+id/tabGroups"
-                android:layout_width="wrap_content"
-                android:layout_height="match_parent"
-                android:background="@drawable/bg_tab_inactive"
-                android:clickable="true"
-                android:focusable="true"
-                android:gravity="center"
-                android:layout_marginRight="8dp"
-                android:paddingLeft="14dp"
-                android:paddingRight="14dp">
-
-                <TextView
-                    android:id="@+id/tabGroupsText"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="Группы"
-                    android:textColor="#6E7C8B"
+                    android:layout_marginTop="2dp"
+                    android:textColor="@color/tg_text_muted"
                     android:textSize="13sp" />
-
-                <TextView
-                    android:id="@+id/tabGroupsBadge"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:layout_marginLeft="6dp"
-                    android:background="@drawable/bg_tab_badge_inactive"
-                    android:gravity="center"
-                    android:minWidth="18dp"
-                    android:minHeight="18dp"
-                    android:paddingLeft="4dp"
-                    android:paddingRight="4dp"
-                    android:text="0"
-                    android:textColor="#6E7C8B"
-                    android:textSize="10sp" />
             </LinearLayout>
 
-            <LinearLayout
-                android:id="@+id/tabWork"
-                android:layout_width="wrap_content"
-                android:layout_height="match_parent"
-                android:background="@drawable/bg_tab_inactive"
+            <ImageView
+                android:id="@+id/createGroupButton"
+                android:layout_width="38dp"
+                android:layout_height="38dp"
+                android:layout_marginRight="6dp"
+                android:background="@drawable/bg_icon_circle"
+                android:src="@drawable/ic_users"
+                android:contentDescription="Создать группу"
+                android:padding="8dp"
                 android:clickable="true"
-                android:focusable="true"
-                android:gravity="center"
-                android:layout_marginRight="8dp"
-                android:paddingLeft="14dp"
-                android:paddingRight="14dp">
+                android:focusable="true"/>
 
-                <TextView
-                    android:id="@+id/tabWorkText"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="Рабочие"
-                    android:textColor="#6E7C8B"
-                    android:textSize="13sp" />
-
-                <TextView
-                    android:id="@+id/tabWorkBadge"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:layout_marginLeft="6dp"
-                    android:background="@drawable/bg_tab_badge_inactive"
-                    android:gravity="center"
-                    android:minWidth="18dp"
-                    android:minHeight="18dp"
-                    android:paddingLeft="4dp"
-                    android:paddingRight="4dp"
-                    android:text="0"
-                    android:textColor="#6E7C8B"
-                    android:textSize="10sp" />
-            </LinearLayout>
-
-            <LinearLayout
-                android:id="@+id/tabBots"
-                android:layout_width="wrap_content"
-                android:layout_height="match_parent"
-                android:background="@drawable/bg_tab_inactive"
+            <ImageView
+                android:id="@+id/logoutButton"
+                android:layout_width="38dp"
+                android:layout_height="38dp"
+                android:background="@drawable/bg_icon_circle"
+                android:src="@drawable/ic_logout"
+                android:contentDescription="Выйти"
+                android:padding="8dp"
                 android:clickable="true"
-                android:focusable="true"
-                android:gravity="center"
-                android:paddingLeft="14dp"
-                android:paddingRight="14dp">
-
-                <TextView
-                    android:id="@+id/tabBotsText"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="Боты"
-                    android:textColor="#6E7C8B"
-                    android:textSize="13sp" />
-
-                <TextView
-                    android:id="@+id/tabBotsBadge"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:layout_marginLeft="6dp"
-                    android:background="@drawable/bg_tab_badge_inactive"
-                    android:gravity="center"
-                    android:minWidth="18dp"
-                    android:minHeight="18dp"
-                    android:paddingLeft="4dp"
-                    android:paddingRight="4dp"
-                    android:text="0"
-                    android:textColor="#6E7C8B"
-                    android:textSize="10sp"
-                    android:visibility="gone" />
-            </LinearLayout>
+                android:focusable="true" />
         </LinearLayout>
-    </HorizontalScrollView>
 
-    <TextView
-        android:id="@+id/dialogsStatus"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:layout_marginTop="8dp"
-        android:minHeight="18dp"
-        android:textColor="#6E7C8B"
-        android:textSize="13sp" />
-
-    <FrameLayout
-        android:layout_width="match_parent"
-        android:layout_height="0dp"
-        android:layout_marginTop="6dp"
-        android:layout_weight="1">
-
-        <ListView
-            android:id="@+id/dialogsList"
+        <EditText
+            android:id="@+id/dialogsSearch"
             android:layout_width="match_parent"
-            android:layout_height="match_parent"
-            android:divider="#F3F4F6"
-            android:dividerHeight="1dp"
-            android:paddingBottom="10dp"
-            android:scrollbars="none" />
+            android:layout_height="46dp"
+            android:layout_marginTop="12dp"
+            android:background="@drawable/bg_input_tg"
+            android:hint="Поиск чатов и людей"
+            android:drawableStart="@drawable/ic_search"
+            android:drawablePadding="10dp"
+            android:paddingLeft="14dp"
+            android:paddingRight="14dp"
+            android:textColor="@color/tg_text"
+            android:textColorHint="@color/tg_text_muted"
+            android:textSize="15sp"
+            android:maxLines="1"
+            android:inputType="text" />
 
-        <su.thegrapht.app.GoogleLoaderView
-            android:id="@+id/dialogsLoader"
-            android:layout_width="48dp"
-            android:layout_height="48dp"
-            android:layout_gravity="center"
-            android:visibility="gone" />
-    </FrameLayout>
+        <TextView
+            android:id="@+id/dialogsStatus"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:minHeight="18dp"
+            android:textColor="@color/tg_text_muted"
+            android:textSize="13sp" />
+
+        <FrameLayout
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:layout_marginTop="6dp"
+            android:layout_weight="1">
+
+            <ListView
+                android:id="@+id/dialogsList"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:divider="@color/tg_border"
+                android:dividerHeight="1dp"
+                android:paddingBottom="10dp"
+                android:scrollbars="none" />
+
+            <su.thegrapht.app.GoogleLoaderView
+                android:id="@+id/dialogsLoader"
+                android:layout_width="48dp"
+                android:layout_height="48dp"
+                android:layout_gravity="center"
+                android:visibility="gone" />
+        </FrameLayout>
+    </LinearLayout>
+
+    <!-- Split-pane Divider (only visible on tablets) -->
+    <View
+        android:id="@+id/tabletDivider"
+        android:layout_width="1dp"
+        android:layout_height="match_parent"
+        android:background="@color/tg_border"
+        android:visibility="gone" />
+
+    <!-- Details View Container (only visible on tablets) -->
+    <FrameLayout
+        android:id="@+id/tabletChatContainer"
+        android:layout_width="0dp"
+        android:layout_height="match_parent"
+        android:layout_weight="2"
+        android:background="?android:attr/windowBackground"
+        android:visibility="gone" />
 
 </LinearLayout>

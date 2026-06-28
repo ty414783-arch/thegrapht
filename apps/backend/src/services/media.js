@@ -129,7 +129,11 @@ export const saveUploadedAudio = async (file) => {
     throw new Error("Uploaded file is too large.");
   }
 
-  const safeName = String(file.name || `audio${fileExtension}`).replace(/[^a-zA-Z0-9._-]+/g, "_");
+  const rawName = String(file.name || `audio${fileExtension}`).trim();
+  const safeName = rawName
+    .replace(/[^\p{L}\p{N}._-]+/gu, "_")
+    .replace(/^[_\-\s.]+|[_\-\s.]+$/gu, "")
+    .replace(/_{2,}/g, "_");
   const buffer = Buffer.from(await file.arrayBuffer());
   const sha256 = crypto.createHash("sha256").update(buffer).digest("hex");
   const now = new Date();
@@ -151,7 +155,7 @@ export const saveUploadedAudio = async (file) => {
   return {
     storedRelativePath,
     mimeType,
-    originalName: safeName,
+    originalName: safeName || `audio${fileExtension}`,
     size: buffer.byteLength,
     absolutePath: storedFilePath
   };

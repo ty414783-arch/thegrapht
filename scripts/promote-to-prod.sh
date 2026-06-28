@@ -26,6 +26,8 @@ rsync -av \
   --exclude='.git' \
   --exclude='scratch' \
   --exclude='*.log' \
+  --exclude='docker-compose.yml' \
+  --exclude='docker-compose.dev.yml' \
   "${DEV_ROOT}/" "${PROJECT_ROOT}/"
 
 # 3. Пересобираем и перезапускаем продакшн-контейнеры

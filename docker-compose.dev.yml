@@ -117,7 +117,20 @@ services:
     ports:
       - "127.0.0.1:11434:11434"
 
+  turn:
+    ports:
+      - "3479:3478/tcp"
+      - "3479:3478/udp"
+      - "5350:5349/tcp"
+      - "5350:5349/udp"
+      - "56000-56100:55000-55100/tcp"
+      - "56000-56100:55000-55100/udp"
+
 volumes:
   backend_dev_logs:
   postgres_dev_data:
+    name: thegrapht_postgres_dev_data
+    external: true
   ollama_dev_data:
+    name: thegrapht_ollama_dev_data
+    external: true
