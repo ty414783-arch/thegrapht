@@ -2477,12 +2477,128 @@ document.addEventListener("DOMContentLoaded", () => {
     setSidebarMenuOpen(false);
     openSidebarProfilePanel();
   });
-
   sidebarProfileBack?.addEventListener("click", () => {
     const sidebarProfilePanel = document.getElementById("sidebar-profile-panel");
     gsapCloseSidebar(sidebarProfilePanel);
   });
 
+  const sidebarProfilePanel = document.getElementById("sidebar-profile-panel");
+  if (sidebarProfilePanel) {
+    sidebarProfilePanel.addEventListener("click", (e) => {
+      if (e.target === sidebarProfilePanel) {
+        gsapCloseSidebar(sidebarProfilePanel);
+      }
+    });
+    sidebarProfilePanel.addEventListener("wheel", (e) => {
+      e.stopPropagation();
+    });
+  }
+
+  const avatarEl = document.getElementById("sidebar-profile-avatar");
+  avatarEl?.addEventListener("click", () => {
+    const avatarImg = avatarEl.querySelector("img") as HTMLImageElement | null;
+    const avatarUrl = avatarImg ? avatarImg.src : "";
+    if (avatarUrl) {
+      const displayName = getWin().currentUserDisplayName || "User";
+      const userId = getWin().currentUserId;
+      const formattedDate = new Date().toLocaleString("en-US", {
+        month: "long",
+        day: "numeric",
+        year: "numeric",
+        hour: "2-digit",
+        minute: "2-digit"
+      });
+      (window as any).openViewerModal?.({
+        src: avatarUrl,
+        senderName: displayName,
+        senderId: userId,
+        createdAt: formattedDate,
+        realAvatarUrl: String(getWin().currentUserAvatarUrl || "").trim()
+      });
+    }
+  });
+
+  const plusBtn = document.getElementById("sidebar-profile-avatar-plus");
+  const uploadMenu = document.getElementById("avatar-upload-menu");
+  const fileInput = document.getElementById("avatar-file-input") as HTMLInputElement | null;
+  const fileBtn = document.getElementById("avatar-upload-file-btn");
+  const clipboardBtn = document.getElementById("avatar-upload-clipboard-btn");
+
+  plusBtn?.addEventListener("click", (e) => {
+    e.stopPropagation();
+    uploadMenu?.classList.toggle("open");
+  });
+
+  document.addEventListener("click", (e) => {
+    if (uploadMenu?.classList.contains("open") && !plusBtn?.contains(e.target as Node) && !uploadMenu.contains(e.target as Node)) {
+      uploadMenu.classList.remove("open");
+    }
+  });
+
+  const uploadUserAvatar = async (base64Data: string) => {
+    const apiBase = getWin().apiBase || "/api";
+    try {
+      const res = await fetch(apiBase + "/v1/users/avatar", {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({ avatarDataUrl: base64Data })
+      });
+      if (!res.ok) {
+        const err = await res.json();
+        alert(err.error || "Failed to upload avatar");
+      }
+    } catch (err) {
+      console.error("Failed to upload avatar:", err);
+      alert("Failed to upload avatar");
+    }
+  };
+
+  fileBtn?.addEventListener("click", () => {
+    uploadMenu?.classList.remove("open");
+    fileInput?.click();
+  });
+
+  fileInput?.addEventListener("change", async () => {
+    const file = fileInput.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = async () => {
+      const base64Data = reader.result as string;
+      await uploadUserAvatar(base64Data);
+    };
+    reader.readAsDataURL(file);
+    fileInput.value = "";
+  });
+
+  clipboardBtn?.addEventListener("click", async () => {
+    uploadMenu?.classList.remove("open");
+    try {
+      const clipboardItems = await navigator.clipboard.read();
+      let imageBlob = null;
+      for (const item of clipboardItems) {
+        const imageTypes = item.types.filter(t => t.startsWith("image/"));
+        if (imageTypes.length > 0) {
+          imageBlob = await item.getType(imageTypes[0]);
+          break;
+        }
+      }
+      if (imageBlob) {
+        const reader = new FileReader();
+        reader.onload = async () => {
+          const base64Data = reader.result as string;
+          await uploadUserAvatar(base64Data);
+        };
+        reader.readAsDataURL(imageBlob);
+      } else {
+        alert("No image found in clipboard!");
+      }
+    } catch (err) {
+      console.error("Clipboard access failed:", err);
+      alert("No image found in clipboard!");
+    }
+  });
   sidebarMenuSaved?.addEventListener("click", () => {
     const allDialogs = getWin().allDialogs || [];
     const savedDialog = allDialogs.find((dialog: any) => dialog.type === "saved");
@@ -2505,20 +2621,22 @@ document.addEventListener("DOMContentLoaded", () => {
 
   // Sidebar resize
   const syncSidebarWidth = () => {
-    let storedWidth = 360;
-    const SIDEBAR_WIDTH_STORAGE_KEY = "thegrapht_sidebar_width";
+    let storedWidth = DEFAULT_SIDEBAR_WIDTH;
     try {
-      storedWidth = Number(window.localStorage.getItem(SIDEBAR_WIDTH_STORAGE_KEY) || 360);
+      storedWidth = Number(window.localStorage.getItem(SIDEBAR_WIDTH_STORAGE_KEY) || DEFAULT_SIDEBAR_WIDTH);
     } catch {}
-    const clampSidebarWidth = (val: number) => {
-      const viewportWidth = window.innerWidth || 0;
-      const minWidth = 320;
-      const maxWidth = Math.max(minWidth, Math.min(720, Math.floor(viewportWidth * 0.5)));
-      return Math.max(minWidth, Math.min(maxWidth, Math.round(val)));
-    };
-    const nextWidth = clampSidebarWidth(Number.isFinite(storedWidth) ? storedWidth : 360);
+    const nextWidth = clampSidebarWidth(Number.isFinite(storedWidth) ? storedWidth : DEFAULT_SIDEBAR_WIDTH);
     const workspaceShell = document.querySelector(".workspace-shell") as HTMLElement;
     workspaceShell?.style.setProperty("--sidebar-width", nextWidth + "px");
+  };
+
+  const SIDEBAR_WIDTH_STORAGE_KEY = "thegrapht_sidebar_width";
+  const DEFAULT_SIDEBAR_WIDTH = 360;
+  const MIN_SIDEBAR_WIDTH = 320;
+  const clampSidebarWidth = (val: number) => {
+    const viewportWidth = window.innerWidth || 0;
+    const maxWidth = Math.max(MIN_SIDEBAR_WIDTH, Math.min(920, Math.floor(viewportWidth * 0.68)));
+    return Math.max(MIN_SIDEBAR_WIDTH, Math.min(maxWidth, Math.round(val)));
   };
 
   syncSidebarWidth();
@@ -2527,6 +2645,11 @@ document.addEventListener("DOMContentLoaded", () => {
     event.preventDefault();
     if (window.innerWidth <= 900) {
       return;
+    }
+    if (typeof sidebarResizeHandle.setPointerCapture === "function") {
+      try {
+        sidebarResizeHandle.setPointerCapture(event.pointerId);
+      } catch {}
     }
     const currentWidth = workspaceSidebar ? workspaceSidebar.getBoundingClientRect().width : 360;
     getWin().sidebarResizeState = {
@@ -2539,10 +2662,9 @@ document.addEventListener("DOMContentLoaded", () => {
 
   sidebarResizeHandle?.addEventListener("dblclick", () => {
     const workspaceShell = document.querySelector(".workspace-shell") as HTMLElement;
-    workspaceShell?.style.setProperty("--sidebar-width", "360px");
+    workspaceShell?.style.setProperty("--sidebar-width", DEFAULT_SIDEBAR_WIDTH + "px");
     try {
-      const SIDEBAR_WIDTH_STORAGE_KEY = "thegrapht_sidebar_width";
-      window.localStorage.setItem(SIDEBAR_WIDTH_STORAGE_KEY, "360");
+      window.localStorage.setItem(SIDEBAR_WIDTH_STORAGE_KEY, String(DEFAULT_SIDEBAR_WIDTH));
     } catch {}
   });
 
@@ -2552,24 +2674,24 @@ document.addEventListener("DOMContentLoaded", () => {
       return;
     }
     const nextWidth = state.startWidth + (event.clientX - state.startX);
-    const clampSidebarWidth = (val: number) => {
-      const viewportWidth = window.innerWidth || 0;
-      const minWidth = 320;
-      const maxWidth = Math.max(minWidth, Math.min(720, Math.floor(viewportWidth * 0.5)));
-      return Math.max(minWidth, Math.min(maxWidth, Math.round(val)));
-    };
     const workspaceShell = document.querySelector(".workspace-shell") as HTMLElement;
     const finalWidth = clampSidebarWidth(nextWidth);
     workspaceShell?.style.setProperty("--sidebar-width", finalWidth + "px");
     try {
-      const SIDEBAR_WIDTH_STORAGE_KEY = "thegrapht_sidebar_width";
       window.localStorage.setItem(SIDEBAR_WIDTH_STORAGE_KEY, String(finalWidth));
     } catch {}
   });
 
-  const stopSidebarResize = () => {
+  const stopSidebarResize = (event?: PointerEvent) => {
     if (!getWin().sidebarResizeState) {
       return;
+    }
+    if (event && sidebarResizeHandle && typeof sidebarResizeHandle.releasePointerCapture === "function") {
+      try {
+        if (sidebarResizeHandle.hasPointerCapture?.(event.pointerId)) {
+          sidebarResizeHandle.releasePointerCapture(event.pointerId);
+        }
+      } catch {}
     }
     getWin().sidebarResizeState = null;
     const workspaceShell = document.querySelector(".workspace-shell") as HTMLElement;
@@ -3950,6 +4072,10 @@ document.addEventListener("DOMContentLoaded", () => {
   };
 
   if (sidebarAiButton) {
+    // Activate AI button (it starts as disabled in HTML)
+    sidebarAiButton.classList.remove("disabled");
+    sidebarAiButton.removeAttribute("disabled");
+
     sidebarAiButton.addEventListener("click", () => {
       if (
         sidebarAiButton.classList.contains("disabled") || 
@@ -3958,6 +4084,13 @@ document.addEventListener("DOMContentLoaded", () => {
       ) {
         return;
       }
+      
+      // Load iframe URL if not yet loaded
+      const iframe = document.getElementById("sidebar-ai-iframe") as HTMLIFrameElement | null;
+      if (iframe && !iframe.src) {
+        iframe.src = "https://ai.thegrapht.su";
+      }
+
       gsapOpenSidebar(sidebarAiPanel);
       
       regenerateInitialPills();

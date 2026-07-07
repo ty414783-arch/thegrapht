@@ -25,19 +25,6 @@ window.addEventListener('error', (event) => {
   }
 }, true);
 
-window.addEventListener("keydown", (event) => {
-  const key = String(event.key || "").toLowerCase();
-  const isRefreshKey = key === "f5" || ((event.ctrlKey || event.metaKey) && key === "r") || ((event.ctrlKey || event.metaKey) && key === "f5");
-  if (!isRefreshKey) {
-    return;
-  }
-  event.preventDefault();
-  event.stopPropagation();
-  if (typeof (event as any).stopImmediatePropagation === "function") {
-    (event as any).stopImmediatePropagation();
-  }
-}, true);
-
 
 const getConfig = () => {
   const win = window as any;
@@ -57,7 +44,7 @@ const getConfig = () => {
 
 // Resolve apiBase
 const explicitApiBase = getConfig().apiBaseUrl || "";
-const publicWebHosts = new Set(["web.thegrapht.su", "dev.thegrapht.su", "thegrapht.su", "www.thegrapht.su"]);
+const publicWebHosts = new Set(["web.thegrapht.su", "dev.thegrapht.su", "thegrapht.su", "www.thegrapht.su", "asymprote.thegrapht.su", "asymproto.thegrapht.su"]);
 const isLoopbackHostname = (value: string) => /^(localhost|127\.0\.0\.1|0\.0\.0\.0)$/i.test(String(value || ""));
 const resolveApiBase = () => {
   const currentHost = window.location.hostname || "";
@@ -750,7 +737,7 @@ const runStaggerMotion = (root: HTMLElement | null, selector: string, options: a
 const animateDialogListItems = () => {
   const dialogList = document.getElementById("dialog-list");
   if (!dialogList) return;
-  runStaggerMotion(dialogList, ".dialog-section-label, .dialog-item, .search-empty-state, .search-loading-state", {
+  runStaggerMotion(dialogList, ".dialog-section-label, .tg-dialog-item, .dialog-item, .search-empty-state, .search-loading-state", {
     duration: 140,
     step: 12,
     maxDelay: 96,
@@ -1012,7 +999,7 @@ const attachRippleMotion = () => {
       ? event.target.closest("button, [role='button']")
       : null;
     if (!target || prefersReducedMotion()) return;
-    if (target.classList.contains("chat-island-copy")) return;
+    if (target.classList.contains("chat-island-copy") || target.classList.contains("avatar-plus-button")) return;
     target.classList.add("ripple-host");
     const rect = target.getBoundingClientRect();
     (target as HTMLElement).style.setProperty("--ripple-x", (event.clientX - rect.left) + "px");
@@ -1031,7 +1018,7 @@ attachRippleMotion();
 
 const createRipple = (e: any) => {
   const target = e.target.closest("button, [role='button'], .dialog-item, .sidebar-glass-menu-item, .sidebar-profile-setting-row, .sidebar-profile-premium-row, .btn, .chat-island-action") as HTMLElement;
-  if (!target || (target as any).disabled || target.classList.contains("disabled")) return;
+  if (!target || (target as any).disabled || target.classList.contains("disabled") || target.id === "sidebar-profile-avatar-plus") return;
   
   if (!target.dataset.rippleCount || target.dataset.rippleCount === "0") {
     target.dataset.rippleCount = "0";
@@ -1145,7 +1132,6 @@ const createRipple = (e: any) => {
 
 document.addEventListener("mousedown", createRipple);
 document.addEventListener("touchstart", createRipple, { passive: true });
-
 // Listen to DOMContentLoaded
 document.addEventListener("DOMContentLoaded", () => {
   const bootSplash = document.getElementById("boot-splash");
@@ -1164,11 +1150,10 @@ document.addEventListener("DOMContentLoaded", () => {
   } catch {}
   const workspaceShell = document.querySelector(".workspace-shell") as HTMLElement;
   if (workspaceShell) {
-    const nextWidth = Math.max(320, Math.min(720, storedWidth));
+    const nextWidth = Math.max(320, Math.min(Math.min(920, Math.floor((window.innerWidth || 0) * 0.68)) || 920, storedWidth));
     workspaceShell.style.setProperty("--sidebar-width", nextWidth + "px");
   }
 
-  // Set event listener for message list scrolls to synchronize bottom button
   const messageList = document.getElementById("message-list");
   messageList?.addEventListener("scroll", () => {
     if (!suppressBottomLockCancel) {
@@ -1630,4 +1615,365 @@ document.addEventListener("DOMContentLoaded", () => {
   // Set event listeners for composer input
   composerInput?.addEventListener("input", syncComposerState);
   composerInput?.addEventListener("change", syncComposerState);
+
+  // Resizable profile panel logic
+  const chatProfileResizeHandle = document.getElementById("chat-profile-resize-handle");
+  const chatProfilePanel = document.getElementById("chat-profile-panel");
+
+  // Restore saved width from localStorage
+  const savedWidth = localStorage.getItem("chat-profile-panel-width");
+  if (savedWidth) {
+    document.documentElement.style.setProperty("--chat-profile-panel-width", savedWidth + "px");
+  }
+
+  if (chatProfileResizeHandle && chatProfilePanel) {
+    let isResizing = false;
+    let startX = 0;
+    let startWidth = 0;
+
+    const onMouseDown = (e: MouseEvent | TouchEvent) => {
+      isResizing = true;
+      chatProfileResizeHandle.classList.add("active");
+      document.body.style.cursor = "col-resize";
+      document.body.style.userSelect = "none";
+
+      const clientX = 'touches' in e ? e.touches[0].clientX : e.clientX;
+      startX = clientX;
+      startWidth = chatProfilePanel.getBoundingClientRect().width;
+
+      document.addEventListener("mousemove", onMouseMove);
+      document.addEventListener("mouseup", onMouseUp);
+      document.addEventListener("touchmove", onTouchMove, { passive: false });
+      document.addEventListener("touchend", onMouseUp);
+    };
+
+    const onMouseMove = (e: MouseEvent | TouchEvent) => {
+      if (!isResizing) return;
+      if ('touches' in e) {
+        e.preventDefault();
+      }
+      const clientX = 'touches' in e ? e.touches[0].clientX : e.clientX;
+      const deltaX = clientX - startX;
+      let newWidth = startWidth - deltaX;
+
+      const minWidth = 320;
+      const maxWidth = Math.min(800, window.innerWidth * 0.8);
+      if (newWidth < minWidth) newWidth = minWidth;
+      if (newWidth > maxWidth) newWidth = maxWidth;
+
+      document.documentElement.style.setProperty("--chat-profile-panel-width", newWidth + "px");
+    };
+
+    const onTouchMove = (e: TouchEvent) => {
+      onMouseMove(e);
+    };
+
+    const onMouseUp = () => {
+      if (!isResizing) return;
+      isResizing = false;
+      chatProfileResizeHandle.classList.remove("active");
+      document.body.style.cursor = "";
+      document.body.style.userSelect = "";
+
+      const currentWidth = chatProfilePanel.getBoundingClientRect().width;
+      localStorage.setItem("chat-profile-panel-width", Math.round(currentWidth).toString());
+
+      document.removeEventListener("mousemove", onMouseMove);
+      document.removeEventListener("mouseup", onMouseUp);
+      document.removeEventListener("touchmove", onTouchMove);
+      document.removeEventListener("touchend", onMouseUp);
+    };
+
+    chatProfileResizeHandle.addEventListener("mousedown", onMouseDown);
+    chatProfileResizeHandle.addEventListener("touchstart", onMouseDown, { passive: true });
+  }
+
+  // Premium Modal Open/Close Logic
+  const premiumModalOverlay = document.getElementById("premium-modal-overlay");
+  const premiumBtn = document.querySelector(".sidebar-profile-premium-row");
+  const premiumClose = document.getElementById("premium-modal-close");
+  const premiumSlider = document.getElementById("premium-modal-slider");
+  const premiumDetailBack = document.getElementById("premium-detail-back");
+  const premiumDetailIcon = document.getElementById("premium-detail-icon");
+  const premiumDetailTitle = document.getElementById("premium-detail-title");
+  const premiumDetailList = document.getElementById("premium-detail-list");
+
+  interface SubFeatureItem {
+    title: string;
+    desc: string;
+    iconSvg: string;
+  }
+
+  const subFeaturesMap: Record<string, { title: string; iconHtml: string; items: SubFeatureItem[] }> = {
+    style: {
+      title: "Messenger Style Customization",
+      iconHtml: `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#ec4899" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-settings"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>`,
+      items: [
+        {
+          title: "Gradient Themes",
+          desc: "Choose from curated multi-color gradient presets.",
+          iconSvg: `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-palette"><circle cx="13.5" cy="6.5" r=".5"/><circle cx="17.5" cy="10.5" r=".5"/><circle cx="8.5" cy="7.5" r=".5"/><circle cx="6.5" cy="12.5" r=".5"/><path d="M12 2C6.5 2 2 6.5 2 12s4.5 10 10 10c.92 0 1.63-.77 1.63-1.7 0-.42-.16-.83-.44-1.14-.28-.31-.44-.72-.44-1.16 0-.93.77-1.7 1.7-1.7H16c4.42 0 8-3.58 8-8 0-4.42-3.58-8-8-8z"/></svg>`
+        },
+        {
+          title: "Custom Chat Bubbles",
+          desc: "Customize outgoing/incoming message bubble styles.",
+          iconSvg: `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-message-square"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>`
+        },
+        {
+          title: "Accent Colors",
+          desc: "Set custom primary colors for the entire interface.",
+          iconSvg: `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-palette"><circle cx="13.5" cy="6.5" r=".5"/><path d="M12 2C6.5 2 2 6.5 2 12s4.5 10 10 10c.92 0 1.63-.77 1.63-1.7 0-.42-.16-.83-.44-1.14-.28-.31-.44-.72-.44-1.16 0-.93.77-1.7 1.7-1.7H16c4.42 0 8-3.58 8-8 0-4.42-3.58-8-8-8z"/></svg>`
+        },
+        {
+          title: "Premium Wallpapers",
+          desc: "Unlock exclusive parallax chat background patterns.",
+          iconSvg: `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-image"><rect width="18" height="18" x="3" y="3" rx="2" ry="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"/></svg>`
+        }
+      ]
+    },
+    glow: {
+      title: "Avatar Glow Effect",
+      iconHtml: `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#a855f7" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-sparkles"><path d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275L12 3Z"/></svg>`,
+      items: [
+        {
+          title: "Dynamic Glowing Borders",
+          desc: "Add a vibrant glowing ring to your avatar.",
+          iconSvg: `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-sparkles"><path d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275L12 3Z"/></svg>`
+        },
+        {
+          title: "Pulse Patterns",
+          desc: "Choose between breathing, rotating, or wave glow animations.",
+          iconSvg: `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-activity"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>`
+        },
+        {
+          title: "Custom Glow Color",
+          desc: "Match the glowing ring to your current mood.",
+          iconSvg: `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-palette"><circle cx="12" cy="12" r="3"/><path d="M12 2C6.5 2 2 6.5 2 12s4.5 10 10 10c.92 0 1.63-.77 1.63-1.7 0-.42-.16-.83-.44-1.14-.28-.31-.44-.72-.44-1.16 0-.93.77-1.7 1.7-1.7H16c4.42 0 8-3.58 8-8 0-4.42-3.58-8-8-8z"/></svg>`
+        },
+        {
+          title: "Profile View Highlight",
+          desc: "Glow effect remains visible in search and chat headers.",
+          iconSvg: `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-user"><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>`
+        }
+      ]
+    },
+    color: {
+      title: "Custom Nickname Color",
+      iconHtml: `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#3b82f6" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-edit"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>`,
+      items: [
+        {
+          title: "Name Coloring",
+          desc: "Paint your name with any gradient or solid color.",
+          iconSvg: `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-palette"><circle cx="12" cy="12" r="3"/><path d="M12 2C6.5 2 2 6.5 2 12s4.5 10 10 10c.92 0 1.63-.77 1.63-1.7 0-.42-.16-.83-.44-1.14-.28-.31-.44-.72-.44-1.16 0-.93.77-1.7 1.7-1.7H16c4.42 0 8-3.58 8-8 0-4.42-3.58-8-8-8z"/></svg>`
+        },
+        {
+          title: "Premium Badge",
+          desc: "Display a special verified star badge next to your name.",
+          iconSvg: `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-star"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>`
+        },
+        {
+          title: "Custom Mention Style",
+          desc: "Highlight mentions of your name with distinct styling.",
+          iconSvg: `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-at-sign"><circle cx="12" cy="12" r="4"/><path d="M16 8v5a3 3 0 0 0 6 0v-1a10 10 0 1 0-4 8"/></svg>`
+        },
+        {
+          title: "Group List Highlight",
+          desc: "Stand out in large group member lists.",
+          iconSvg: `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-users"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>`
+        }
+      ]
+    },
+    gif: {
+      title: "GIF Avatars",
+      iconHtml: `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#f59e0b" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-image"><rect width="18" height="18" x="3" y="3" rx="2" ry="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"/></svg>`,
+      items: [
+        {
+          title: "Animated Profiles",
+          desc: "Play GIF avatars inside chats and settings.",
+          iconSvg: `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-video"><path d="m16 13 5.223 3.482a.5.5 0 0 0 .777-.416V7.87a.5.5 0 0 0-.752-.432L16 10.5"/><rect x="2" y="6" width="14" height="12" rx="2"/></svg>`
+        },
+        {
+          title: "High Frame Rate",
+          desc: "Smooth GIF playback with optimized resource usage.",
+          iconSvg: `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-zap"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>`
+        },
+        {
+          title: "Custom Cover Frame",
+          desc: "Pick the static cover frame for offline/preview views.",
+          iconSvg: `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-settings"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>`
+        },
+        {
+          title: "Looping Playback",
+          desc: "Infinite seamless loops for your animation files.",
+          iconSvg: `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-repeat"><path d="m17 2 4 4-4 4"/><path d="M3 11v-1a4 4 0 0 1 4-4h14"/><path d="m7 22-4-4 4-4"/><path d="M21 13v1a4 4 0 0 1-4 4H3"/></svg>`
+        }
+      ]
+    },
+    status: {
+      title: "Custom Last Seen Status",
+      iconHtml: `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#9ca3af" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-lock"><rect width="18" height="11" x="3" y="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>`,
+      items: [
+        {
+          title: "Stealth Offline",
+          desc: "Hide your precise activity time from everyone.",
+          iconSvg: `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-eye-off"><path d="M9.88 9.88a3 3 0 1 0 4.24 4.24"/><path d="M10.73 5.08A10.43 10.43 0 0 1 12 5c7 0 10 7 10 7a13.16 13.16 0 0 1-1.67 2.68"/><path d="M6.61 6.61A13.52 13.52 0 0 0 2 12s3 7 10 7a9.74 9.74 0 0 0 5.39-1.61"/><line x1="2" x2="22" y1="2" y2="22"/></svg>`
+        },
+        {
+          title: "Selective Visibility",
+          desc: "Customize who can see your online status.",
+          iconSvg: `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-users"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>`
+        },
+        {
+          title: "Read Time Control",
+          desc: "Hide when you read other users' messages.",
+          iconSvg: `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-check"><path d="M20 6 9 17l-5-5"/></svg>`
+        },
+        {
+          title: "Granular Status",
+          desc: "Shows general states like 'recently' or 'long ago'.",
+          iconSvg: `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-user"><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>`
+        }
+      ]
+    },
+    ai: {
+      title: "AI Assistant Integration",
+      iconHtml: `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#10b981" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-star"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>`,
+      items: [
+        {
+          title: "Graphite Model Access",
+          desc: "Chat with our smartest, reasoning AI engine.",
+          iconSvg: `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-cpu"><rect width="16" height="16" x="4" y="4" rx="2"/><rect width="6" height="6" x="9" y="9" rx="1"/><path d="M9 1v3"/><path d="M15 1v3"/><path d="M9 20v3"/><path d="M15 20v3"/><path d="M20 9h3"/><path d="M20 15h3"/><path d="M1 9h3"/><path d="M1 15h3"/></svg>`
+        },
+        {
+          title: "Carbon Coding Model",
+          desc: "Ask advanced programming and debugging questions.",
+          iconSvg: `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-code"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>`
+        },
+        {
+          title: "Priority Inference",
+          desc: "Get lightning fast responses even during high load.",
+          iconSvg: `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-zap"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>`
+        },
+        {
+          title: "Unlimited Context",
+          desc: "Longer history memory limits for your AI sessions.",
+          iconSvg: `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-layers"><path d="m12 3-10 5 10 5 10-5-10-5Z"/><path d="m2 17 10 5 10-5"/><path d="m2 12 10 5 10-5"/></svg>`
+        }
+      ]
+    }
+  };
+
+  console.log("Premium elements status:", { premiumModalOverlay, premiumBtn, premiumClose, premiumSlider });
+
+  const openPremiumModal = () => {
+    console.log("openPremiumModal triggered! Overlay:", premiumModalOverlay);
+    if (!premiumModalOverlay) return;
+    
+    // Reset to main features list when opening
+    if (premiumSlider) {
+      premiumSlider.classList.remove("show-detail");
+    }
+
+    premiumModalOverlay.removeAttribute("hidden");
+    premiumModalOverlay.setAttribute("aria-hidden", "false");
+    void premiumModalOverlay.offsetWidth;
+    premiumModalOverlay.classList.add("open");
+    console.log("Overlay open class added. Classes:", premiumModalOverlay.className);
+  };
+
+  const closePremiumModal = () => {
+    console.log("closePremiumModal triggered!");
+    if (!premiumModalOverlay) return;
+    premiumModalOverlay.classList.remove("open");
+    premiumModalOverlay.setAttribute("aria-hidden", "true");
+    setTimeout(() => {
+      if (!premiumModalOverlay.classList.contains("open")) {
+        premiumModalOverlay.setAttribute("hidden", "true");
+        // Reset slider layout
+        if (premiumSlider) {
+          premiumSlider.classList.remove("show-detail");
+        }
+      }
+    }, 300);
+  };
+
+  if (premiumBtn) {
+    premiumBtn.addEventListener("click", (e) => {
+      console.log("Direct premium button click!");
+      openPremiumModal();
+    });
+  }
+
+  if (premiumClose) {
+    premiumClose.addEventListener("click", (e) => {
+      closePremiumModal();
+    });
+  }
+
+  // Handle detailed features click and back navigation
+  if (premiumDetailBack && premiumSlider) {
+    premiumDetailBack.addEventListener("click", () => {
+      premiumSlider.classList.remove("show-detail");
+    });
+  }
+
+  document.addEventListener("click", (e) => {
+    const target = e.target as HTMLElement;
+    
+    // Handle main profile row click
+    if (target.closest(".sidebar-profile-premium-row")) {
+      console.log("Delegated premium button click!");
+      openPremiumModal();
+      return;
+    }
+    
+    // Handle clicking a specific premium feature item to slide to detailed view
+    const featureItem = target.closest(".premium-feature-item");
+    if (featureItem && premiumSlider && premiumDetailIcon && premiumDetailTitle && premiumDetailList) {
+      const featureId = featureItem.getAttribute("data-feature");
+      if (featureId && subFeaturesMap[featureId]) {
+        const data = subFeaturesMap[featureId];
+        
+        // Populate detail icon & title
+        premiumDetailIcon.innerHTML = data.iconHtml;
+        premiumDetailTitle.textContent = data.title;
+        
+        // Populate list
+        premiumDetailList.innerHTML = data.items.map(item => `
+          <li class="premium-detail-item">
+            <span class="premium-detail-item-icon-wrap">
+              ${item.iconSvg}
+            </span>
+            <div class="premium-detail-item-info">
+              <span class="premium-detail-item-title">${item.title}</span>
+              <span class="premium-detail-item-desc">${item.desc}</span>
+            </div>
+          </li>
+        `).join("");
+        
+        // Slide to detail view
+        premiumSlider.classList.add("show-detail");
+      }
+      return;
+    }
+    
+    // Handle closing click
+    if (target === premiumModalOverlay || target.closest("#premium-modal-close")) {
+      console.log("Delegated close click!");
+      closePremiumModal();
+      return;
+    }
+
+    // Handle subscribe buttons action
+    if (target.closest(".premium-subscribe-action")) {
+      alert("Subscribing process simulation: Thank you for supporting TheGraphT Premium!");
+      closePremiumModal();
+    }
+  });
+
+  window.addEventListener("keydown", (e) => {
+    if (e.key === "Escape" && premiumModalOverlay && !premiumModalOverlay.hasAttribute("hidden")) {
+      closePremiumModal();
+    }
+  });
 });

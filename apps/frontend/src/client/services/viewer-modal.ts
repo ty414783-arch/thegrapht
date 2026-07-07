@@ -2,6 +2,7 @@
 export {};
 
 const getWin = () => window as any;
+declare const escapeHtml: (v: any) => string;
 
 let viewerZoom = 1;
 let viewerSourceRect: { left: number; top: number; width: number; height: number } | null = null;
@@ -120,13 +121,14 @@ const closeViewerModal = () => {
   }, 280);
 };
 
-const openViewerModal = ({ src, fallbackSrc, senderName, senderId, createdAt, sourceRect }: {
+const openViewerModal = ({ src, fallbackSrc, senderName, senderId, createdAt, sourceRect, realAvatarUrl }: {
   src: string;
   fallbackSrc?: string;
   senderName?: string;
   senderId?: string;
   createdAt?: string;
   sourceRect?: { left: number; top: number; width: number; height: number } | null;
+  realAvatarUrl?: string;
 }) => {
   const viewerModal = document.getElementById("viewer-modal");
   const viewerAuthorAvatar = document.getElementById("viewer-author-avatar");
@@ -153,12 +155,18 @@ const openViewerModal = ({ src, fallbackSrc, senderName, senderId, createdAt, so
   };
   viewerZoom = 1;
 
-  const getAvatarMeta = getWin().getAvatarMeta;
-  if (typeof getAvatarMeta === "function") {
-    const avatar = getAvatarMeta(senderId || senderName || "?", senderName || "?");
-    if (viewerAuthorAvatar) {
-      viewerAuthorAvatar.innerHTML = '<img class="generated-avatar-photo" src="' + avatar.avatarUrl + '" alt="' + avatar.letter + '" />';
-      viewerAuthorAvatar.style.cssText = avatar.style;
+  if (viewerAuthorAvatar) {
+    const avatarUrl = realAvatarUrl || "";
+    if (avatarUrl) {
+      viewerAuthorAvatar.innerHTML = '<img class="generated-avatar-photo" src="' + escapeHtml(avatarUrl) + '" alt="' + escapeHtml(senderName || "?") + '" />';
+      viewerAuthorAvatar.removeAttribute("style");
+    } else {
+      const getAvatarMeta = getWin().getAvatarMeta;
+      if (typeof getAvatarMeta === "function") {
+        const avatar = getAvatarMeta(senderId || senderName || "?", senderName || "?");
+        viewerAuthorAvatar.innerHTML = '<img class="generated-avatar-photo" src="' + avatar.avatarUrl + '" alt="' + avatar.letter + '" />';
+        viewerAuthorAvatar.style.cssText = avatar.style;
+      }
     }
   }
 
