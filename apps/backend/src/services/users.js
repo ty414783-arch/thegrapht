@@ -21,7 +21,8 @@ export const getUserByEmail = (email, executor) =>
         is_system AS "isSystem",
         password_hash AS "passwordHash",
         telegram_id AS "telegramId",
-        telegram_username AS "telegramUsername"
+        telegram_username AS "telegramUsername",
+        avatar_url AS "avatarUrl"
       FROM users
       WHERE email = $1
       LIMIT 1
@@ -33,13 +34,25 @@ export const getUserByEmail = (email, executor) =>
 export const getUserById = (userId, executor) =>
   queryOne(
     `
-      SELECT id, name, username, email
+      SELECT id, name, username, email, avatar_url AS "avatarUrl"
       FROM users
       WHERE id = $1
         AND is_system = FALSE
       LIMIT 1
     `,
     [userId],
+    executor
+  );
+
+export const updateUserAvatar = (userId, avatarUrl, executor) =>
+  queryOne(
+    `
+      UPDATE users
+      SET avatar_url = $2
+      WHERE id = $1
+      RETURNING id, name, username, email, avatar_url AS "avatarUrl"
+    `,
+    [userId, avatarUrl],
     executor
   );
 

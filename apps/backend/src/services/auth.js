@@ -104,6 +104,7 @@ export const sanitizeUser = (user) => ({
   displayName: user.name,
   username: user.username,
   email: user.email,
+  avatarUrl: user.avatarUrl || null,
   isSecureSupported: config.secureDirectChatsEnabled
 });
 
@@ -289,7 +290,7 @@ export const getUserFromToken = (token, executor) => {
         WHERE id IN (SELECT user_id FROM matched_session)
         RETURNING id
       )
-      SELECT u.id, u.name, u.username, u.email, u.is_system AS "isSystem"
+      SELECT u.id, u.name, u.username, u.email, u.is_system AS "isSystem", u.avatar_url AS "avatarUrl"
       FROM touched_user
       JOIN users u ON u.id = touched_user.id
       LIMIT 1

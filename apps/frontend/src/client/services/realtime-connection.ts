@@ -574,6 +574,79 @@ const connectRealtime = () => {
           if (typeof handleCallMuteState === "function") {
             handleCallMuteState(payload);
           }
+        } else if (payload.type === "user_profile_updated") {
+          const { userId, avatarUrl, displayName, username } = payload.payload || {};
+          if (userId) {
+            const win = window as any;
+            if (userId === win.currentUserId) {
+              win.currentUserAvatarUrl = avatarUrl || "";
+              win.currentUserDisplayName = displayName || "";
+              win.currentUserUsername = username || "";
+              const workspaceUserName = document.getElementById("workspace-username");
+              if (workspaceUserName) workspaceUserName.textContent = displayName || "";
+              const settingsModal = document.getElementById("sidebar-profile-panel");
+              if (settingsModal?.classList.contains("open")) {
+                const settingsName = document.getElementById("sidebar-profile-display-name");
+                if (settingsName) settingsName.textContent = displayName || "";
+                const settingsUser = document.getElementById("sidebar-profile-username");
+                if (settingsUser) settingsUser.textContent = username ? ("@" + username) : "";
+                const settingsAvatar = document.getElementById("sidebar-profile-avatar");
+                if (settingsAvatar) {
+                  if (avatarUrl) {
+                    settingsAvatar.innerHTML = '<img class="generated-avatar-photo" src="' + avatarUrl + '" alt="' + (displayName || "") + '" />';
+                    settingsAvatar.removeAttribute("style");
+                  } else {
+                    const meta = typeof win.getAvatarMeta === "function" ? win.getAvatarMeta(userId, displayName || "?") : null;
+                    if (meta) {
+                      settingsAvatar.innerHTML = '<img class="generated-avatar-photo" src="' + meta.avatarUrl + '" alt="' + (meta.letter || "?") + '" />';
+                      settingsAvatar.style.cssText = meta.style || "";
+                    }
+                  }
+                }
+              }
+            }
+            const allDialogs = win.allDialogs || [];
+            const targetDialog = allDialogs.find((d: any) => d.type === "direct" && d.peerId === userId);
+            if (targetDialog) {
+              targetDialog.avatarUrl = avatarUrl;
+              targetDialog.peerDisplayName = displayName;
+              targetDialog.peerUsername = username;
+              if (typeof win.renderDialogs === "function") {
+                win.renderDialogs();
+              }
+            }
+            if (win.currentDialogPeerId === userId) {
+              const chatHeaderName = document.getElementById("chat-header-name");
+              if (chatHeaderName) chatHeaderName.textContent = displayName || "";
+              const chatHeaderAvatar = document.getElementById("chat-header-avatar");
+              if (chatHeaderAvatar) {
+                if (avatarUrl) {
+                  chatHeaderAvatar.innerHTML = '<img class="generated-avatar-photo" src="' + avatarUrl + '" alt="' + (displayName || "") + '" />';
+                  chatHeaderAvatar.removeAttribute("style");
+                } else {
+                  const meta = typeof win.getAvatarMeta === "function" ? win.getAvatarMeta(userId, displayName || "?") : null;
+                  if (meta) {
+                    chatHeaderAvatar.innerHTML = '<img class="generated-avatar-photo" src="' + meta.avatarUrl + '" alt="' + (meta.letter || "?") + '" />';
+                    chatHeaderAvatar.style.cssText = meta.style || "";
+                  }
+                }
+              }
+            }
+            const messageAvatars = document.querySelectorAll('.message-avatar[data-sender-id="' + userId + '"]');
+            messageAvatars.forEach((element) => {
+              const el = element as HTMLElement;
+              if (avatarUrl) {
+                el.innerHTML = '<img class="generated-avatar-photo" src="' + avatarUrl + '" alt="' + (displayName || "") + '" />';
+                el.removeAttribute("style");
+              } else {
+                const meta = typeof win.getAvatarMeta === "function" ? win.getAvatarMeta(userId, displayName || "?") : null;
+                if (meta) {
+                  el.innerHTML = '<img class="generated-avatar-photo" src="' + meta.avatarUrl + '" alt="' + (meta.letter || "?") + '" />';
+                  el.style.cssText = meta.style || "";
+                }
+              }
+            });
+          }
         }
       } catch (error) {
         wsWarn("message_handler_failed", {

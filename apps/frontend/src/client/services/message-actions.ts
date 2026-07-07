@@ -210,35 +210,28 @@ const buildContextMenuButton = (action: string, label: string, icon: string, dan
   '</button>'
 );
 
-const getContextMenuActions = (message: any) => {
-  const currentUserId = getWin().currentUserId;
-  const isOwn = message.senderId === currentUserId;
-  const actions: any[] = [
+const getLinkOrText = (message: any): string => {
+  if (message.body) {
+    const match = message.body.match(/https?:\/\/[^\s]+/i);
+    if (match) return match[0];
+    return message.body;
+  }
+  if (message.attachmentPath) {
+    const apiBase = getWin().apiBase || "/api";
+    return window.location.origin + apiBase + "/v1/messages/" + encodeURIComponent(message.id) + "/media";
+  }
+  return "";
+};
+
+const getContextMenuActions = (message: any): any[] => {
+  return [
     {
-      key: "reply",
-      label: "Reply",
-      icon: typeof getWin().getIcon === "function" ? getWin().getIcon("reply", "", 'aria-hidden="true"') : ""
+      key: "copy_link",
+      label: "Copy Link",
+      icon: typeof getWin().getIcon === "function" ? getWin().getIcon("copy", "", 'aria-hidden="true"') : "",
+      danger: false
     }
   ];
-
-  if (isMessageDownloadable(message)) {
-    actions.push({
-      key: "download",
-      label: "Download",
-      icon: typeof getWin().getIcon === "function" ? getWin().getIcon("download", "", 'aria-hidden="true"') : ""
-    });
-  }
-
-  if (isOwn) {
-    actions.push({
-      key: "delete",
-      label: "Delete",
-      icon: typeof getWin().getIcon === "function" ? getWin().getIcon("delete", "", 'aria-hidden="true"') : "",
-      danger: true
-    });
-  }
-
-  return actions;
 };
 
 const openMessageContextMenu = (event: MouseEvent, message: any) => {
@@ -259,15 +252,13 @@ const openMessageContextMenu = (event: MouseEvent, message: any) => {
 
   messageContextMenuState = { message };
   const menuWidth = 220;
-  const menuHeight = 160;
+  const menuHeight = 60;
   const left = Math.min(window.innerWidth - menuWidth - 12, Math.max(12, event.clientX));
   const top = Math.min(window.innerHeight - menuHeight - 12, Math.max(12, event.clientY));
   messageContextMenu.style.left = left + "px";
   messageContextMenu.style.top = top + "px";
   messageContextMenu.classList.add("open");
   messageContextMenu.setAttribute("aria-hidden", "false");
-
-  const composerInput = document.getElementById("composer-input");
 
   messageContextMenuBody.querySelectorAll("[data-action]").forEach((button) => {
     button.addEventListener("click", () => {
@@ -276,22 +267,13 @@ const openMessageContextMenu = (event: MouseEvent, message: any) => {
         return;
       }
 
-      if (action === "reply") {
-        setPendingReplyMessage(message);
-        if (composerInput) composerInput.focus();
+      if (action === "copy_link") {
+        const link = getLinkOrText(message);
+        if (link && navigator.clipboard?.writeText) {
+          void navigator.clipboard.writeText(link);
+        }
         closeMessageContextMenuSoon();
         return;
-      }
-
-      if (action === "download") {
-        void downloadMessageMedia(message);
-        closeMessageContextMenuSoon();
-        return;
-      }
-
-      if (action === "delete") {
-        openDeleteMessageModal(message);
-        closeMessageContextMenuSoon();
       }
     });
   });

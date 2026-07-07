@@ -12,9 +12,8 @@ declare const renderSingleMessage: (message: any, options: any) => string;
 declare const normalizeMessageDaySeparators: (() => void) | undefined;
 declare const rememberCurrentDialogScrollTop: () => void;
 declare const syncChatScrollBottomButton: () => void;
-const updateScrollDayIndicator = () => {};
 declare const computeIsNearChatBottom: () => boolean;
-declare let suppressBottomLockCancel: boolean;
+const updateScrollDayIndicator = () => {};
 declare const markManualScrollIntent: () => void;
 declare const scrollMessagesToBottom: (behavior: string) => void;
 
@@ -150,19 +149,19 @@ const initScrollPagination = () => {
   }, { passive: true });
 
   messageList.addEventListener("wheel", () => {
-    if (!suppressBottomLockCancel) {
+    if (!(window as any).suppressBottomLockCancel) {
       markManualScrollIntent();
     }
   }, { passive: true });
 
   messageList.addEventListener("touchstart", () => {
-    if (!suppressBottomLockCancel) {
+    if (!(window as any).suppressBottomLockCancel) {
       markManualScrollIntent();
     }
   }, { passive: true });
 
   messageList.addEventListener("pointerdown", () => {
-    if (!suppressBottomLockCancel) {
+    if (!(window as any).suppressBottomLockCancel) {
       markManualScrollIntent();
     }
   }, { passive: true });
@@ -173,7 +172,7 @@ const initScrollPagination = () => {
       return;
     }
     const scrollKeys = ["ArrowUp", "ArrowDown", "PageUp", "PageDown", "Home", "End", " "];
-    if (scrollKeys.includes(event.key) && !suppressBottomLockCancel) {
+    if (scrollKeys.includes(event.key) && !(window as any).suppressBottomLockCancel) {
       markManualScrollIntent();
     }
   }, { passive: true });

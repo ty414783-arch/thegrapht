@@ -192,7 +192,7 @@ const buildGeneratedAvatarUrl = (seedSource: any, labelSource: any) => {
   return "data:image/svg+xml;charset=utf-8," + encodeURIComponent(svg);
 };
 
-const getAvatarMeta = (seedSource: any, labelSource: any) => {
+const getAvatarMeta = (seedSource: any, labelSource: any, realAvatarUrl?: string) => {
   const seed = String(seedSource || labelSource || "?");
   const hash = hashSeed(seed);
   const palette = avatarPalettes[Math.abs(hash) % avatarPalettes.length];
@@ -207,7 +207,7 @@ const getAvatarMeta = (seedSource: any, labelSource: any) => {
     rawLetter = rawLabel[0] || "?";
   }
   const letter = rawLetter.toLocaleUpperCase("ru-RU") || "?";
-  const avatarUrl = buildGeneratedAvatarUrl(seedSource, labelSource);
+  const avatarUrl = realAvatarUrl || buildGeneratedAvatarUrl(seedSource, labelSource);
   return {
     letter: escapeHtml(letter),
     start: palette[0],

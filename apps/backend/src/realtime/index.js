@@ -325,6 +325,32 @@ export const createRealtimeHub = ({
     }
   };
 
+  const broadcastProfileUpdated = async ({ userId, avatarUrl, displayName, username }) => {
+    let relatedUserIds = [];
+    try {
+      relatedUserIds = await getRelatedUserIdsForUser(userId);
+    } catch (error) {
+      console.error("[realtime] broadcastProfileUpdated failed to resolve related users", {
+        userId,
+        error: error instanceof Error ? error.message : String(error || "")
+      });
+    }
+
+    const recipientUserIds = Array.from(new Set([userId, ...relatedUserIds]));
+
+    for (const recipientUserId of recipientUserIds) {
+      sendRealtimeEvent(recipientUserId, {
+        type: "user_profile_updated",
+        payload: {
+          userId,
+          avatarUrl,
+          displayName,
+          username
+        }
+      });
+    }
+  };
+
   const relayCallEvent = async ({ senderUserId, payload }) => {
     const dialogId = typeof payload?.dialogId === "string" && payload.dialogId ? payload.dialogId : null;
 
@@ -589,6 +615,7 @@ export const createRealtimeHub = ({
     broadcastMessageCreated,
     broadcastMessageDeleted,
     broadcastTyping,
+    broadcastProfileUpdated,
     handleUpgrade
   };
 };

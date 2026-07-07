@@ -383,13 +383,12 @@ export const createRequestHandler = ({
   }
 
   if (request.url === serviceWorkerUrl) {
-    response.writeHead(200, {
-      "Content-Type": "application/javascript; charset=utf-8",
+    response.writeHead(404, {
+      "Content-Type": "text/plain",
       "Cache-Control": "no-store",
-      "Service-Worker-Allowed": "/",
       ...baseSecurityHeaders
     });
-    response.end(serviceWorkerScript);
+    response.end("Service Worker Removed");
     return;
   }
 
@@ -505,7 +504,7 @@ export const createRequestHandler = ({
   }
 
   const hostHeader = request.headers.host || "";
-  const isWebDomain = hostHeader.startsWith("web.") || hostHeader.startsWith("dev.") || hostHeader.includes("localhost") || hostHeader.includes("127.0.0.1");
+  const isWebDomain = hostHeader.startsWith("web.") || hostHeader.startsWith("dev.") || hostHeader.startsWith("asymprote.") || hostHeader.startsWith("asymproto.") || hostHeader.includes("localhost") || hostHeader.includes("127.0.0.1");
 
   if (!isWebDomain && (request.url === "/" || request.url === "/index.html")) {
     sendTextResponse(request, response, 200, {

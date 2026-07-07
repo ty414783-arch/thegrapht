@@ -809,7 +809,7 @@ const syncVisibleDialogsRealtimeState = () => {
         avatarPresence.classList.toggle("online", isDirectDialogOnline(dialog));
       }
 
-      const previewNode = button.querySelector(".dialog-preview-copy");
+      const previewNode = button.querySelector(".tg-dialog-preview, .dialog-preview-copy");
 
       if (previewNode) {
         const nextTypingPreview = getTypingPreview(dialog);

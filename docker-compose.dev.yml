@@ -126,6 +126,35 @@ services:
       - "56000-56100:55000-55100/tcp"
       - "56000-56100:55000-55100/udp"
 
+  open-webui-dev:
+    build:
+      context: ./apps/open-webui
+      dockerfile: Dockerfile
+    container_name: thegrapht-dev-openwebui
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8082:8080"
+    volumes:
+      - open_webui_dev_data:/app/backend/data
+    environment:
+      - OPENAI_API_BASE_URLS=http://host.docker.internal:10000/v1
+      - OPENAI_API_KEYS=thegrapht-cocoon
+      - WEBUI_AUTH=True
+      - WEBUI_AUTH_TRUSTED_EMAIL_HEADER=X-User-Email
+      - WEBUI_AUTH_TRUSTED_NAME_HEADER=X-User-Name
+      - WEBUI_NAME=TheGraphT Chat (Dev)
+      - WEBUI_SECRET_KEY=tHgPrOtOcOlSeCrEtKeY2026
+      - DEFAULT_USER_ROLE=user
+      - HF_TOKEN=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
+      - ENABLE_RAG_WEB_SEARCH=True
+      - ENABLE_WEB_SEARCH=True
+      - RAG_WEB_SEARCH_ENGINE=duckduckgo
+      - WEB_SEARCH_ENGINE=duckduckgo
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      - postgres-dev
+
 volumes:
   backend_dev_logs:
   postgres_dev_data:
@@ -133,4 +162,7 @@ volumes:
     external: true
   ollama_dev_data:
     name: thegrapht_ollama_dev_data
+    external: true
+  open_webui_dev_data:
+    name: thegrapht_open_webui_dev_data
     external: true

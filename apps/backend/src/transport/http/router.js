@@ -1,7 +1,7 @@
 import { hasTrustedBrowserOrigin, sendJson, sendOptions } from "../../utils/http.js";
 import { logger } from "../../utils/logger.js";
 import { config } from "../../config.js";
-import { handleLogin, handleLogout, handleRegister, handleVerify, handleResend } from "../../application/use-cases/auth.js";
+import { handleLogin, handleLogout, handleRegister, handleVerify, handleResend, handleUpdateUserAvatar, handleCheckSession } from "../../application/use-cases/auth.js";
 import {
   handleClientState,
   handleCreateGroupDialog,
@@ -100,6 +100,11 @@ export const createHttpRouter = (context) => async (request, response) => {
     return;
   }
 
+  if (url.pathname === "/api/v1/auth/check-session" && request.method === "GET") {
+    await handleCheckSession(request, response, context);
+    return;
+  }
+
   if (url.pathname === "/api/v1/client-state" && request.method === "GET") {
     await handleClientState(request, response, context);
     return;
@@ -107,6 +112,11 @@ export const createHttpRouter = (context) => async (request, response) => {
 
   if (url.pathname === "/api/v1/users/search" && request.method === "GET") {
     await handleUserSearch(request, response, context);
+    return;
+  }
+
+  if (url.pathname === "/api/v1/users/avatar" && request.method === "PUT") {
+    await handleUpdateUserAvatar(request, response, context);
     return;
   }
 

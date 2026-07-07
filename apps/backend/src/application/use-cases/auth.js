@@ -12,7 +12,7 @@ import {
   createClearedSessionCookie
 } from "../../services/auth.js";
 import { ensureSavedMessagesDialogForUser, seedUserWorkspace } from "../../services/dialogs.js";
-import { getUserByEmail, createUser } from "../../services/users.js";
+import { getUserByEmail, createUser, updateUserAvatar } from "../../services/users.js";
 import { generateVerificationCode, sendVerificationEmail } from "../../services/mail.js";
 import { readJsonBody, sendJson } from "../../utils/http.js";
 import {
@@ -346,3 +346,53 @@ export const handleLogout = async (request, response) => {
     "Set-Cookie": createClearedSessionCookie(request)
   });
 };
+
+export const handleUpdateUserAvatar = async (request, response, context) => {
+  await context.withAuthorizedUser(request, response, async (user) => {
+    try {
+      const body = await readJsonBody(request);
+      const avatarDataUrl = typeof body?.avatarDataUrl === "string" ? body.avatarDataUrl.trim() : "";
+      if (!avatarDataUrl) {
+        sendJson(request, response, 400, { error: "avatarDataUrl is required" });
+        return;
+      }
+
+      if (avatarDataUrl.length > 3_000_000) {
+        sendJson(request, response, 400, { error: "Uploaded photo is too large" });
+        return;
+      }
+
+      let updatedUser = null;
+      await withTransaction(async (client) => {
+        updatedUser = await updateUserAvatar(user.id, avatarDataUrl, client);
+      });
+
+      if (!updatedUser) {
+        sendJson(request, response, 500, { error: "Failed to update profile photo" });
+        return;
+      }
+
+      await context.realtimeHub.broadcastProfileUpdated({
+        userId: user.id,
+        avatarUrl: updatedUser.avatarUrl,
+        displayName: updatedUser.name,
+        username: updatedUser.username
+      });
+
+      sendJson(request, response, 200, { user: sanitizeUser(updatedUser) });
+    } catch (error) {
+      console.error("Failed to update user avatar:", error);
+      sendJson(request, response, 500, { error: "Internal server error" });
+    }
+  });
+};
+
+export const handleCheckSession = async (request, response, context) => {
+  await context.withAuthorizedUser(request, response, async (user) => {
+    sendJson(request, response, 200, { ok: true }, {
+      "X-User-Email": user.email,
+      "X-User-Name": user.name || user.username || ""
+    });
+  });
+};
+

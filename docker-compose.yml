@@ -141,6 +141,29 @@ services:
       - POSTFIX_myhostname=thegrapht.su
       - POSTFIX_mynetworks=127.0.0.0/8,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16
 
+  open-webui:
+    build:
+      context: ./apps/open-webui
+      dockerfile: Dockerfile
+    container_name: thegrapht-openwebui
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8080:8080"
+    volumes:
+      - open_webui_data:/app/backend/data
+    environment:
+      - OLLAMA_BASE_URL=http://host.docker.internal:11434
+      - WEBUI_AUTH=True
+      - WEBUI_AUTH_TRUSTED_EMAIL_HEADER=X-User-Email
+      - WEBUI_AUTH_TRUSTED_NAME_HEADER=X-User-Name
+      - WEBUI_NAME=TheGraphT Chat
+      - WEBUI_SECRET_KEY=tHgPrOtOcOlSeCrEtKeY2026
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      - postgres
+
 volumes:
   backend_logs:
   postgres_data:
+  open_webui_data:

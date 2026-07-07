@@ -251,74 +251,14 @@ export const buildHtml = ({
               <div class="sidebar-ai-tooltip" aria-hidden="true">TheGraphT Chat</div>
             </div>
 
-            <!-- TheGraphT Chat AI Panel -->
+            <!-- TheGraphT Chat AI Panel (Open WebUI iframe) -->
             <div id="sidebar-ai-panel" class="sidebar-ai-panel" aria-hidden="true">
-              <header class="sidebar-ai-header" style="position: relative;">
-                <div class="sidebar-ai-title-wrap" id="sidebar-ai-model-selector-btn" style="cursor: pointer; user-select: none;">
-                  ${getIconHtml("auto_awesome", "sidebar-ai-header-stars", "aria-hidden=\"true\" id=\"sidebar-ai-selected-model-icon\"")}
-                  <div class="sidebar-ai-header-copy" style="display: flex; align-items: center; gap: 4px;">
-                    <strong class="sidebar-ai-title" id="sidebar-ai-selected-model-name">TheGraphT Chat (Base)</strong>
-                    ${getIconHtml("keyboard_arrow_down", "", "style=\"font-size: 18px; opacity: 0.7; transition: transform 0.2s ease;\" id=\"sidebar-ai-selector-chevron\"")}
-                  </div>
-                </div>
-                <button id="sidebar-ai-close" class="sidebar-ai-close" type="button" aria-label="Close AI chat">
+              <div id="sidebar-ai-resize-handle" class="sidebar-ai-resize-handle" aria-hidden="true"></div>
+              <div class="sidebar-ai-inner" style="position: relative; width: 100%; height: 100%; display: flex; flex-direction: column;">
+                <button id="sidebar-ai-close" class="sidebar-ai-close" type="button" aria-label="Close AI chat" style="position: absolute; top: 12px; right: 12px; z-index: 9999; background: rgba(0, 0, 0, 0.4); border: 1px solid rgba(255,255,255,0.1);">
                   ${getIconHtml("close", "", "aria-hidden=\"true\"")}
                 </button>
-                
-                <!-- Model Selector Dropdown Menu (Material M3 Glassmorphism Style) -->
-                <div id="sidebar-ai-model-menu" class="sidebar-ai-model-menu" aria-hidden="true">
-                  <div class="sidebar-ai-model-menu-item active" data-model="base">
-                    ${getIconHtml("mode_fan", "sidebar-ai-model-icon", "aria-hidden=\"true\"")}
-                    <div class="sidebar-ai-model-info">
-                      <div class="sidebar-ai-model-name">TheGraphT Chat (Base)</div>
-                      <div class="sidebar-ai-model-desc">Отлично подходит для повседневных задач</div>
-                    </div>
-                    ${getIconHtml("check", "sidebar-ai-model-check", "aria-hidden=\"true\" id=\"sidebar-ai-check-base\"")}
-                  </div>
-                  <div class="sidebar-ai-model-menu-item" data-model="pro" style="opacity: 0.8;">
-                    ${getIconHtml("auto_awesome", "sidebar-ai-model-icon pro", "aria-hidden=\"true\"")}
-                    <div class="sidebar-ai-model-info">
-                      <div class="sidebar-ai-model-name" style="display: flex; align-items: center; gap: 6px;">
-                        TheGraphT Chat Pro
-                        ${getIconHtml("lock", "", "style=\"font-size: 15px; color: #a5b4fc;\"")}
-                      </div>
-                      <div class="sidebar-ai-model-desc">Gemini Pro (доступно с 15 июня)</div>
-                    </div>
-                  </div>
-                </div>
-              </header>
-              
-              <div id="sidebar-ai-messages" class="sidebar-ai-messages">
-                <div class="sidebar-ai-welcome">
-                  <div class="sidebar-ai-welcome-stars">
-                    ${getIconHtml("auto_awesome", "", "aria-hidden=\"true\"")}
-                  </div>
-                  <h3>TheGraphT Chat</h3>
-                  <p>Your personal AI assistant built into TheGraphT messenger. Ask me anything or let me analyze your conversations.</p>
-                </div>
-              </div>
-
-              <!-- Quick Prompt suggestion Pills -->
-              <div id="sidebar-ai-pills-wrap" class="sidebar-ai-pills-wrap">
-                <div id="sidebar-ai-pills" class="sidebar-ai-pills">
-                  <button class="sidebar-ai-pill" type="button" data-prompt="Summarize this chat for me">💬 Summarize chat</button>
-                  <button class="sidebar-ai-pill" type="button" data-prompt="Help me write a reply to this conversation">✍️ Help me reply</button>
-                  <button class="sidebar-ai-pill" type="button" data-prompt="What should I know about this conversation?">🔍 Analyze chat</button>
-                  <button class="sidebar-ai-pill" type="button" data-prompt="Translate the last messages to English">🌐 Translate</button>
-                </div>
-              </div>
-
-              <div class="sidebar-ai-footer">
-                <div id="sidebar-ai-suggestions-wrap" class="sidebar-ai-suggestions-wrap hidden">
-                  <div class="sidebar-ai-suggestions-title">ИИ предлагает варианты ответа:</div>
-                  <div id="sidebar-ai-suggestions" class="sidebar-ai-suggestions"></div>
-                </div>
-                <div class="sidebar-ai-input-wrap">
-                  <textarea id="sidebar-ai-input" rows="1" placeholder="Message TheGraphT Chat..." autocomplete="off"></textarea>
-                  <button id="sidebar-ai-send" class="sidebar-ai-send" type="button" aria-label="Send">
-                    ${getIconHtml("arrow_upward", "", "aria-hidden=\"true\"")}
-                  </button>
-                </div>
+                <iframe id="sidebar-ai-iframe" src="" style="flex: 1; width: 100%; height: 100%; border: 0; background: #0b0f19;" allow="microphone; camera; clipboard-read; clipboard-write"></iframe>
               </div>
             </div>
 
@@ -384,95 +324,109 @@ export const buildHtml = ({
 
             <!-- Profile Settings Panel -->
             <aside id="sidebar-profile-panel" class="sidebar-profile-panel" aria-hidden="true">
-              <header class="sidebar-profile-header">
-                <button id="sidebar-profile-back" class="sidebar-profile-back" type="button" aria-label="Close Profile">
-                  ${getIconHtml("arrow_back", "", "aria-hidden=\"true\"")}
-                </button>
-                <strong class="sidebar-profile-title">Settings</strong>
-                <button class="sidebar-profile-edit" type="button" aria-label="Edit profile">
-                  ${getIconHtml("edit", "", "aria-hidden=\"true\"")}
-                </button>
-                <button class="sidebar-profile-more" type="button" aria-label="More options">
-                  ${getIconHtml("more_vert", "", "aria-hidden=\"true\"")}
-                </button>
-              </header>
-
-              <div class="sidebar-profile-body">
-                <!-- Avatar Zone -->
-                <div class="sidebar-profile-avatar-zone">
-                  <div id="sidebar-profile-avatar" class="sidebar-profile-avatar-circle" aria-hidden="true"></div>
-                  <div class="sidebar-profile-identity">
-                    <p id="sidebar-profile-display-name" class="sidebar-profile-name"></p>
-                    <span class="sidebar-profile-online-badge">online</span>
+              <div class="sidebar-profile-card">
+                <header class="sidebar-profile-header">
+                  <strong class="sidebar-profile-title">Settings</strong>
+                  <div class="sidebar-profile-header-actions">
+                    <button class="sidebar-profile-search" type="button" aria-label="Search settings">
+                      ${getIconHtml("search", "", "aria-hidden=\"true\"")}
+                    </button>
+                    <button class="sidebar-profile-more" type="button" aria-label="More options">
+                      ${getIconHtml("more_vert", "", "aria-hidden=\"true\"")}
+                    </button>
+                    <button id="sidebar-profile-back" class="sidebar-profile-close" type="button" aria-label="Close Settings">
+                      ${getIconHtml("close", "", "aria-hidden=\"true\"")}
+                    </button>
                   </div>
-                </div>
+                </header>
 
-                <!-- Info Block -->
-                <div class="sidebar-profile-info-block">
-                  <div class="sidebar-profile-info-row">
-                    ${getIconHtml("alternate_email", "sidebar-profile-info-icon", "aria-hidden=\"true\"")}
-                    <div class="sidebar-profile-info-content">
-                      <p id="sidebar-profile-username" class="sidebar-profile-info-value"></p>
-                      <p class="sidebar-profile-info-label">Username</p>
+                <div class="sidebar-profile-body">
+                  <!-- Avatar Zone -->
+                  <div class="sidebar-profile-avatar-zone">
+                    <div class="sidebar-profile-avatar-wrapper">
+                      <div id="sidebar-profile-avatar" class="sidebar-profile-avatar-circle" aria-hidden="true"></div>
+                      <button id="sidebar-profile-avatar-plus" class="avatar-plus-button" type="button" aria-label="Change profile photo">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="4" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-plus"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+                      </button>
+                      
+                      <!-- Avatar upload context menu -->
+                      <div id="avatar-upload-menu" class="avatar-upload-menu" aria-hidden="true">
+                        <button id="avatar-upload-file-btn" class="avatar-upload-menu-item" type="button">
+                          ${getIconHtml("image", "avatar-upload-menu-icon", "aria-hidden=\"true\"")}
+                          <span>File</span>
+                        </button>
+                        <button id="avatar-upload-clipboard-btn" class="avatar-upload-menu-item" type="button">
+                          ${getIconHtml("content_copy", "avatar-upload-menu-icon", "aria-hidden=\"true\"")}
+                          <span>From clipboard</span>
+                        </button>
+                      </div>
+                    </div>
+                    
+                    <div class="sidebar-profile-identity">
+                      <p id="sidebar-profile-display-name" class="sidebar-profile-name"></p>
+                      <span id="sidebar-profile-username" class="sidebar-profile-username-header"></span>
+                      <span class="sidebar-profile-online-badge">online</span>
                     </div>
                   </div>
-                </div>
 
-                <!-- Settings Menu -->
-                <div class="sidebar-profile-settings-block">
-                  <button class="sidebar-profile-setting-row" type="button">
-                    ${getIconHtml("notifications", "sidebar-profile-setting-icon", "aria-hidden=\"true\"")}
-                    <span class="sidebar-profile-setting-label">Notifications and Sounds</span>
-                    ${getIconHtml("chevron_right", "sidebar-profile-setting-arrow", "aria-hidden=\"true\"")}
-                  </button>
-                  <button class="sidebar-profile-setting-row" type="button">
-                    ${getIconHtml("storage", "sidebar-profile-setting-icon", "aria-hidden=\"true\"")}
-                    <span class="sidebar-profile-setting-label">Data and Storage</span>
-                    ${getIconHtml("chevron_right", "sidebar-profile-setting-arrow", "aria-hidden=\"true\"")}
-                  </button>
-                  <button class="sidebar-profile-setting-row" type="button">
-                    ${getIconHtml("lock", "sidebar-profile-setting-icon", "aria-hidden=\"true\"")}
-                    <span class="sidebar-profile-setting-label">Privacy and Security</span>
-                    ${getIconHtml("chevron_right", "sidebar-profile-setting-arrow", "aria-hidden=\"true\"")}
-                  </button>
-                  <button class="sidebar-profile-setting-row" type="button">
-                    ${getIconHtml("settings", "sidebar-profile-setting-icon", "aria-hidden=\"true\"")}
-                    <span class="sidebar-profile-setting-label">General Settings</span>
-                    ${getIconHtml("chevron_right", "sidebar-profile-setting-arrow", "aria-hidden=\"true\"")}
-                  </button>
-                  <button class="sidebar-profile-setting-row" type="button">
-                    ${getIconHtml("folder", "sidebar-profile-setting-icon", "aria-hidden=\"true\"")}
-                    <span class="sidebar-profile-setting-label">Chat Folders</span>
-                    ${getIconHtml("chevron_right", "sidebar-profile-setting-arrow", "aria-hidden=\"true\"")}
-                  </button>
-                  <button class="sidebar-profile-setting-row" type="button">
-                    ${getIconHtml("mood", "sidebar-profile-setting-icon", "aria-hidden=\"true\"")}
-                    <span class="sidebar-profile-setting-label">Stickers and Emoji</span>
-                    ${getIconHtml("chevron_right", "sidebar-profile-setting-arrow", "aria-hidden=\"true\"")}
-                  </button>
-                  <button class="sidebar-profile-setting-row" type="button">
-                    ${getIconHtml("devices", "sidebar-profile-setting-icon", "aria-hidden=\"true\"")}
-                    <span class="sidebar-profile-setting-label">Devices</span>
-                    <span class="sidebar-profile-device-badge">11</span>
-                    ${getIconHtml("chevron_right", "sidebar-profile-setting-arrow", "aria-hidden=\"true\"")}
-                  </button>
-                  <button class="sidebar-profile-setting-row" type="button">
-                    ${getIconHtml("translate", "sidebar-profile-setting-icon", "aria-hidden=\"true\"")}
-                    <span class="sidebar-profile-setting-label">Language</span>
-                    <span class="sidebar-profile-setting-value">English</span>
-                    ${getIconHtml("chevron_right", "sidebar-profile-setting-arrow", "aria-hidden=\"true\"")}
-                  </button>
-                </div>
+                  <input type="file" id="avatar-file-input" style="display: none;" accept="image/png, image/jpeg, image/gif, image/webp" />
 
-                <!-- Premium Row -->
-                <div class="sidebar-profile-premium-block">
-                  <button class="sidebar-profile-premium-row" type="button">
-                    <span class="sidebar-profile-premium-icon-wrap" aria-hidden="true">
-                      ${getIconHtml("star", "", "aria-hidden=\"true\"")}
-                    </span>
-                    <span class="sidebar-profile-premium-label">TheGraphT Premium</span>
-                    ${getIconHtml("chevron_right", "sidebar-profile-setting-arrow", "aria-hidden=\"true\"")}
-                  </button>
+                  <!-- Settings Menu -->
+                  <div class="sidebar-profile-settings-block">
+                    <button class="sidebar-profile-setting-row" type="button">
+                      ${getIconHtml("notifications", "sidebar-profile-setting-icon", "aria-hidden=\"true\"")}
+                      <span class="sidebar-profile-setting-label">Notifications and Sounds</span>
+                      ${getIconHtml("chevron_right", "sidebar-profile-setting-arrow", "aria-hidden=\"true\"")}
+                    </button>
+                    <button class="sidebar-profile-setting-row" type="button">
+                      ${getIconHtml("storage", "sidebar-profile-setting-icon", "aria-hidden=\"true\"")}
+                      <span class="sidebar-profile-setting-label">Data and Storage</span>
+                      ${getIconHtml("chevron_right", "sidebar-profile-setting-arrow", "aria-hidden=\"true\"")}
+                    </button>
+                    <button class="sidebar-profile-setting-row" type="button">
+                      ${getIconHtml("lock", "sidebar-profile-setting-icon", "aria-hidden=\"true\"")}
+                      <span class="sidebar-profile-setting-label">Privacy and Security</span>
+                      ${getIconHtml("chevron_right", "sidebar-profile-setting-arrow", "aria-hidden=\"true\"")}
+                    </button>
+                    <button class="sidebar-profile-setting-row" type="button">
+                      ${getIconHtml("settings", "sidebar-profile-setting-icon", "aria-hidden=\"true\"")}
+                      <span class="sidebar-profile-setting-label">General Settings</span>
+                      ${getIconHtml("chevron_right", "sidebar-profile-setting-arrow", "aria-hidden=\"true\"")}
+                    </button>
+                    <button class="sidebar-profile-setting-row" type="button">
+                      ${getIconHtml("folder", "sidebar-profile-setting-icon", "aria-hidden=\"true\"")}
+                      <span class="sidebar-profile-setting-label">Chat Folders</span>
+                      ${getIconHtml("chevron_right", "sidebar-profile-setting-arrow", "aria-hidden=\"true\"")}
+                    </button>
+                    <button class="sidebar-profile-setting-row" type="button">
+                      ${getIconHtml("mood", "sidebar-profile-setting-icon", "aria-hidden=\"true\"")}
+                      <span class="sidebar-profile-setting-label">Stickers and Emoji</span>
+                      ${getIconHtml("chevron_right", "sidebar-profile-setting-arrow", "aria-hidden=\"true\"")}
+                    </button>
+                    <button class="sidebar-profile-setting-row" type="button">
+                      ${getIconHtml("devices", "sidebar-profile-setting-icon", "aria-hidden=\"true\"")}
+                      <span class="sidebar-profile-setting-label">Devices</span>
+                      <span class="sidebar-profile-device-badge">11</span>
+                      ${getIconHtml("chevron_right", "sidebar-profile-setting-arrow", "aria-hidden=\"true\"")}
+                    </button>
+                    <button class="sidebar-profile-setting-row" type="button">
+                      ${getIconHtml("translate", "sidebar-profile-setting-icon", "aria-hidden=\"true\"")}
+                      <span class="sidebar-profile-setting-label">Language</span>
+                      <span class="sidebar-profile-setting-value">English</span>
+                      ${getIconHtml("chevron_right", "sidebar-profile-setting-arrow", "aria-hidden=\"true\"")}
+                    </button>
+                  </div>
+
+                  <!-- Premium Row -->
+                  <div class="sidebar-profile-premium-block">
+                    <button class="sidebar-profile-premium-row" type="button">
+                      <span class="sidebar-profile-premium-icon-wrap" aria-hidden="true">
+                        ${getIconHtml("star", "", "aria-hidden=\"true\"")}
+                      </span>
+                      <span class="sidebar-profile-premium-label">TheGraphT Premium</span>
+                      ${getIconHtml("chevron_right", "sidebar-profile-setting-arrow", "aria-hidden=\"true\"")}
+                    </button>
+                  </div>
                 </div>
               </div>
             </aside>
@@ -548,6 +502,7 @@ export const buildHtml = ({
                 ${getIconHtml("call_end", "", "aria-hidden=\"true\"")}
               </button>
               <aside id="chat-profile-panel" class="chat-profile-panel" aria-hidden="true">
+                <div id="chat-profile-resize-handle" class="chat-profile-resize-handle"></div>
                 <div class="chat-profile-panel-header">
                   <span class="chat-profile-panel-title">Info</span>
                   <button id="chat-profile-close" class="chat-profile-panel-close" type="button" aria-label="Close profile">
@@ -905,6 +860,132 @@ ${buildComposerMarkup({
         }
       })();
     </script>
+    <!-- TheGraphT Premium Modal -->
+    <div id="premium-modal-overlay" class="premium-modal-overlay" aria-hidden="true" hidden>
+      <div class="premium-modal-card">
+        <button id="premium-modal-close" class="premium-modal-close" type="button" aria-label="Close modal">
+          ${getIconHtml("close", "", "aria-hidden=\"true\"")}
+        </button>
+        <div id="premium-modal-slider" class="premium-modal-slider">
+          
+          <!-- Panel 1: Main Features List -->
+          <div class="premium-panel main-panel">
+            <div class="premium-modal-header">
+              <div class="premium-star-animation">
+                ${getIconHtml("star", "premium-header-star", "aria-hidden=\"true\"")}
+              </div>
+              <h2 class="premium-modal-title">TheGraphT Premium</h2>
+              <p class="premium-modal-subtitle">Support the development and unlock exclusive features</p>
+            </div>
+            <div class="premium-modal-body">
+              <ul class="premium-features-list">
+                <li class="premium-feature-item" data-feature="style">
+                  <span class="premium-feature-icon-wrap theme-gradient">
+                    ${getIconHtml("settings", "", "aria-hidden=\"true\"")}
+                  </span>
+                  <div class="premium-feature-info">
+                    <span class="premium-feature-title">Messenger Style Customization</span>
+                    <span class="premium-feature-desc">Unique gradient themes for the application.</span>
+                  </div>
+                  <span class="premium-feature-chevron">
+                    ${getIconHtml("chevron_right", "", "aria-hidden=\"true\"")}
+                  </span>
+                </li>
+                <li class="premium-feature-item" data-feature="glow">
+                  <span class="premium-feature-icon-wrap avatar-glowing">
+                    ${getIconHtml("auto_awesome", "", "aria-hidden=\"true\"")}
+                  </span>
+                  <div class="premium-feature-info">
+                    <span class="premium-feature-title">Avatar Glow Effect</span>
+                    <span class="premium-feature-desc">Dynamic neon glowing border around your avatar.</span>
+                  </div>
+                  <span class="premium-feature-chevron">
+                    ${getIconHtml("chevron_right", "", "aria-hidden=\"true\"")}
+                  </span>
+                </li>
+                <li class="premium-feature-item" data-feature="color">
+                  <span class="premium-feature-icon-wrap name-painting">
+                    ${getIconHtml("edit", "", "aria-hidden=\"true\"")}
+                  </span>
+                  <div class="premium-feature-info">
+                    <span class="premium-feature-title">Custom Nickname Color</span>
+                    <span class="premium-feature-desc">Stand out in groups with a custom color and a premium badge.</span>
+                  </div>
+                  <span class="premium-feature-chevron">
+                    ${getIconHtml("chevron_right", "", "aria-hidden=\"true\"")}
+                  </span>
+                </li>
+                <li class="premium-feature-item" data-feature="gif">
+                  <span class="premium-feature-icon-wrap gif-avatar">
+                    ${getIconHtml("photo_library", "", "aria-hidden=\"true\"")}
+                  </span>
+                  <div class="premium-feature-info">
+                    <span class="premium-feature-title">GIF Avatars</span>
+                    <span class="premium-feature-desc">Support for animated GIF avatars in your profile.</span>
+                  </div>
+                  <span class="premium-feature-chevron">
+                    ${getIconHtml("chevron_right", "", "aria-hidden=\"true\"")}
+                  </span>
+                </li>
+                <li class="premium-feature-item" data-feature="status">
+                  <span class="premium-feature-icon-wrap offline-status">
+                    ${getIconHtml("lock", "", "aria-hidden=\"true\"")}
+                  </span>
+                  <div class="premium-feature-info">
+                    <span class="premium-feature-title">Custom Last Seen Status</span>
+                    <span class="premium-feature-desc">Hide your exact last seen time (shows recently/long ago).</span>
+                  </div>
+                  <span class="premium-feature-chevron">
+                    ${getIconHtml("chevron_right", "", "aria-hidden=\"true\"")}
+                  </span>
+                </li>
+                <li class="premium-feature-item" data-feature="ai">
+                  <span class="premium-feature-icon-wrap ai-integration">
+                    ${getIconHtml("star", "", "aria-hidden=\"true\"")}
+                  </span>
+                  <div class="premium-feature-info">
+                    <span class="premium-feature-title">AI Assistant Integration</span>
+                    <span class="premium-feature-desc">Access advanced AI models on ai.thegrapht.su (Carbon/Graphite).</span>
+                  </div>
+                  <span class="premium-feature-chevron">
+                    ${getIconHtml("chevron_right", "", "aria-hidden=\"true\"")}
+                  </span>
+                </li>
+              </ul>
+            </div>
+            <div class="premium-modal-footer">
+              <button id="premium-subscribe-btn" class="premium-subscribe-btn premium-subscribe-action" type="button">
+                Subscribe for $2.99 / month
+              </button>
+            </div>
+          </div>
+
+          <!-- Panel 2: Detailed Sub-features View -->
+          <div class="premium-panel detail-panel">
+            <div class="premium-detail-header">
+              <button id="premium-detail-back" class="premium-detail-back-btn" type="button" aria-label="Go back">
+                ${getIconHtml("arrow_back", "", "aria-hidden=\"true\"")}
+              </button>
+              <div class="premium-detail-title-container">
+                <span id="premium-detail-icon" class="premium-detail-icon-mini"></span>
+                <h3 id="premium-detail-title" class="premium-detail-title">Feature Details</h3>
+              </div>
+            </div>
+            <div class="premium-modal-body">
+              <ul id="premium-detail-list" class="premium-detail-list">
+                <!-- Dynamically populated via javascript -->
+              </ul>
+            </div>
+            <div class="premium-modal-footer">
+              <button class="premium-subscribe-btn premium-subscribe-action" type="button">
+                Subscribe for $2.99 / month
+              </button>
+            </div>
+          </div>
+
+        </div>
+      </div>
+    </div>
     <script src="${clientScriptUrl}" defer></script>
   </body>
 </html>`;
