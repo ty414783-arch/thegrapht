@@ -1,0 +1,65 @@
+.bubble {
+  display: inline-block;
+  max-width: min(480px, calc(100vw - 240px));
+  padding: 8px 10px 6px;
+  border-radius: 12px;
+  position: relative;
+  word-break: break-word;
+}
+
+.incoming {
+  background: #fff;
+  align-self: flex-start;
+}
+
+.outgoing {
+  background: #d9effa;
+  align-self: flex-end;
+}
+
+.pending {
+  opacity: 0.92;
+}
+
+.failed {
+  outline: 1px solid rgba(217, 48, 37, 0.35);
+}
+
+.retry {
+  border: 0;
+  background: transparent;
+  color: #d93025;
+  font-size: 12px;
+  cursor: pointer;
+  padding: 0;
+}
+
+.mention {
+  border: 0;
+  background: transparent;
+  color: #2aabee;
+  padding: 0;
+  font: inherit;
+  cursor: pointer;
+}
+
+.body {
+  white-space: pre-wrap;
+}
+
+.meta {
+  display: inline-flex;
+  align-items: center;
+  float: right;
+  gap: 2px;
+  margin-left: 7px;
+  margin-top: 5px;
+  height: 14px;
+  line-height: 14px;
+}
+
+.time {
+  font-size: 11px;
+  color: rgba(0, 0, 0, 0.45);
+  white-space: nowrap;
+}

@@ -1,0 +1,81 @@
+.overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 2147482000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: rgba(255, 255, 255, 0.92);
+  backdrop-filter: blur(8px);
+}
+
+.card {
+  width: min(420px, 100%);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 28px;
+  border-radius: 20px;
+  background: #fff;
+  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.12);
+}
+
+.title {
+  margin: 0;
+  font-size: 24px;
+}
+
+.copy {
+  margin: 0 0 8px;
+  color: rgba(0, 0, 0, 0.6);
+  font-size: 14px;
+}
+
+.input {
+  width: 100%;
+  box-sizing: border-box;
+  min-height: 44px;
+  border: 1px solid rgba(0, 0, 0, 0.1);
+  border-radius: 12px;
+  padding: 10px 12px;
+  font: inherit;
+}
+
+.primary {
+  min-height: 44px;
+  border: 0;
+  border-radius: 12px;
+  background: #2aabee;
+  color: #fff;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.primary:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.link {
+  border: 0;
+  background: transparent;
+  color: #2aabee;
+  font: inherit;
+  cursor: pointer;
+  text-align: left;
+  padding: 0;
+}
+
+.status {
+  margin: 0;
+  font-size: 13px;
+}
+
+.error {
+  color: #d93025;
+}
+
+.success {
+  color: #188038;
+}

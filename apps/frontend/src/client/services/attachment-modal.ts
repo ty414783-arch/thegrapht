@@ -1,4 +1,12 @@
 // Attachment Modal Service for Preact / TypeScript Migration
+import {
+  buildLegacyAttachmentCollageItems,
+  buildLegacyAttachmentFileItems,
+  renderLegacyAttachmentFileStrip,
+  renderLegacyAttachmentPhotoCollage
+} from "../features/media/legacyAttachmentModalMount.tsx";
+import { getLegacyAttachmentCollageCountClass } from "../features/media/legacyAttachmentModalSync.ts";
+
 export {};
 
 declare const messageList: HTMLElement;
@@ -30,7 +38,6 @@ declare const formatFileCount: (count: number) => string;
 declare const formatPhotoCount: (count: number) => string;
 declare const formatDuration: (v: number) => string;
 declare const formatBytes: (v: number) => string;
-declare const escapeHtml: (v: any) => string;
 
 const getWin = () => window as any;
 
@@ -44,6 +51,8 @@ if (typeof getWin().pendingImageCaption === 'undefined') getWin().pendingImageCa
 if (typeof getWin().pendingAttachmentModalScrollTop === 'undefined') getWin().pendingAttachmentModalScrollTop = 0;
 if (typeof getWin().attachmentModalCleanupToken === 'undefined') getWin().attachmentModalCleanupToken = 0;
 if (typeof getWin().attachmentModalCleanupTimer === 'undefined') getWin().attachmentModalCleanupTimer = null;
+
+let collageRemovingIndex: number | null = null;
 
 const getMaxMediaAttachments = () => getWin().MAX_MEDIA_ATTACHMENTS || 500;
 
@@ -270,7 +279,10 @@ const clearPendingImageAttachment = (options: any = {}) => {
       attachmentModalImage.parentElement?.classList.remove("loading");
     }
     if (typeof attachmentModalStrip !== 'undefined' && attachmentModalStrip) {
-      attachmentModalStrip.innerHTML = "";
+      renderLegacyAttachmentFileStrip(attachmentModalStrip, [], {
+        onSelect: () => {},
+        onRemove: () => {}
+      });
     }
   }, 220);
 };
@@ -284,12 +296,67 @@ const moveAttachmentModal = (direction: number) => {
   renderAttachmentModal();
 };
 
+const handleRemoveFileAttachment = (removeIndex: number) => {
+  const files = getWin().pendingFileAttachments || [];
+  const removed = files.splice(removeIndex, 1);
+  if (removed[0]?.previewUrl) {
+    try {
+      URL.revokeObjectURL(removed[0].previewUrl);
+    } catch {}
+  }
+  if (!files.length) {
+    clearPendingImageAttachment();
+  } else {
+    if (getWin().pendingFileAttachmentIndex >= files.length) {
+      getWin().pendingFileAttachmentIndex = files.length - 1;
+    }
+    renderComposerAttachmentPreview();
+    renderAttachmentModal();
+  }
+};
+
+const handleRemovePhotoAttachment = (removeIndex: number) => {
+  collageRemovingIndex = removeIndex;
+  const collageEl = document.getElementById("attachment-modal-collage");
+  if (collageEl instanceof HTMLElement) {
+    renderLegacyAttachmentPhotoCollage(
+      collageEl,
+      buildLegacyAttachmentCollageItems(getWin().pendingImageAttachments),
+      {
+        removingIndex: collageRemovingIndex,
+        onRemove: handleRemovePhotoAttachment
+      }
+    );
+  }
+
+  window.setTimeout(() => {
+    collageRemovingIndex = null;
+    const photos = getWin().pendingImageAttachments || [];
+    const removed = photos.splice(removeIndex, 1);
+    if (removed[0]?.previewUrl) {
+      try {
+        URL.revokeObjectURL(removed[0].previewUrl);
+      } catch {}
+    }
+    if (!photos.length) {
+      clearPendingImageAttachment();
+    } else {
+      if (getWin().pendingImageAttachmentIndex >= photos.length) {
+        getWin().pendingImageAttachmentIndex = photos.length - 1;
+      }
+      renderComposerAttachmentPreview();
+      renderAttachmentModal({ preserveScroll: true });
+    }
+  }, 140);
+};
+
 const renderAttachmentModal = (options: any = {}) => {
   if (typeof attachmentModal === 'undefined' || !attachmentModal) {
     return;
   }
   const attachmentModalShell = attachmentModal.querySelector(".attachment-modal-shell");
   const attachmentModalContent = attachmentModal.querySelector(".attachment-modal-content");
+  const stageEl = document.getElementById("attachment-modal-stage") || attachmentModal.querySelector(".attachment-modal-stage");
   const preserveScroll = Boolean(options.preserveScroll);
 
   if (getWin().attachmentModalMode === "file") {
@@ -301,9 +368,15 @@ const renderAttachmentModal = (options: any = {}) => {
       return;
     }
 
+    if (stageEl instanceof HTMLElement) {
+      stageEl.hidden = true;
+      stageEl.style.display = "none";
+    }
+
     const hasLongFileList = getWin().pendingFileAttachments.length > 6;
     if (attachmentModalShell) {
       attachmentModalShell.classList.add("is-file-mode");
+      attachmentModalShell.classList.remove("is-image-mode");
       attachmentModalShell.classList.toggle("is-multi", hasLongFileList);
       attachmentModalShell.classList.toggle("is-single", !hasLongFileList);
     }
@@ -312,7 +385,8 @@ const renderAttachmentModal = (options: any = {}) => {
       attachmentModalTitle.textContent = formatFileCount(getWin().pendingFileAttachments.length);
     }
     if (typeof attachmentModalCaption !== 'undefined' && attachmentModalCaption) {
-      attachmentModalCaption.value = getWin().pendingImageCaption;
+      attachmentModalCaption.placeholder = (window as any).t ? (window as any).t("media.addCaption") : "Add a caption...";
+      attachmentModalCaption.value = getWin().pendingImageCaption || "";
     }
     if (typeof attachmentModalPrev !== 'undefined' && attachmentModalPrev) {
       attachmentModalPrev.hidden = true;
@@ -328,36 +402,32 @@ const renderAttachmentModal = (options: any = {}) => {
       attachmentModalImage.alt = "";
       attachmentModalImage.parentElement?.classList.remove("loading");
     }
-    if (typeof attachmentModalStrip !== 'undefined' && attachmentModalStrip) {
-      attachmentModalStrip.innerHTML = getWin().pendingFileAttachments.map((entry: any, index: number) => {
-        const duration = formatDuration(Number(entry.durationSeconds) || 0);
-        const size = formatBytes(Number(entry.file?.size) || 0);
-        const meta = duration && size
-          ? (duration + " • " + size)
-          : (duration || size || "Audio file");
-        return '<button class="attachment-modal-file-item' + (index === getWin().pendingFileAttachmentIndex ? ' active' : '') + '" type="button" data-file-attachment-index="' + index + '">' +
-          '<span class="attachment-modal-file-icon" aria-hidden="true">▶</span>' +
-          '<span class="attachment-modal-file-copy">' +
-            '<span class="attachment-modal-file-name">' + escapeHtml(entry.file?.name || "Audio file") + '</span>' +
-            '<span class="attachment-modal-file-meta">' + escapeHtml(meta) + '</span>' +
-          '</span>' +
-        '</button>';
-      }).join("");
+    const stripEl = document.getElementById("attachment-modal-strip");
+    if (stripEl instanceof HTMLElement) {
+      renderLegacyAttachmentFileStrip(
+        stripEl,
+        buildLegacyAttachmentFileItems(
+          getWin().pendingFileAttachments,
+          getWin().pendingFileAttachmentIndex
+        ),
+        {
+          onSelect: (index) => {
+            getWin().pendingFileAttachmentIndex = index;
+            renderAttachmentModal();
+          },
+          onRemove: handleRemoveFileAttachment
+        }
+      );
+    }
+
+    const attachmentModalCollage = document.getElementById("attachment-modal-collage");
+    if (attachmentModalCollage instanceof HTMLElement) {
+      attachmentModalCollage.hidden = true;
+      attachmentModalCollage.style.display = "none";
     }
 
     attachmentModal.classList.add("open");
     attachmentModal.setAttribute("aria-hidden", "false");
-
-    if (typeof attachmentModalStrip !== 'undefined' && attachmentModalStrip) {
-      attachmentModalStrip.querySelectorAll("[data-file-attachment-index]").forEach((button) => {
-        button.addEventListener("click", (event) => {
-          event.preventDefault();
-          event.stopPropagation();
-          getWin().pendingFileAttachmentIndex = Number(button.getAttribute("data-file-attachment-index")) || 0;
-          renderAttachmentModal();
-        });
-      });
-    }
 
     if (preserveScroll && attachmentModalContent instanceof HTMLElement) {
       attachmentModalContent.scrollTop = getWin().pendingAttachmentModalScrollTop;
@@ -377,29 +447,77 @@ const renderAttachmentModal = (options: any = {}) => {
   const isMultiSelection = getWin().pendingImageAttachments.length > 1;
   if (attachmentModalShell) {
     attachmentModalShell.classList.remove("is-file-mode");
+    attachmentModalShell.classList.add("is-image-mode");
     attachmentModalShell.classList.toggle("is-multi", isMultiSelection);
     attachmentModalShell.classList.toggle("is-single", !isMultiSelection);
   }
 
+  const attachmentModalCollage = document.getElementById("attachment-modal-collage");
+
   if (typeof attachmentModalTitle !== 'undefined' && attachmentModalTitle) {
     attachmentModalTitle.textContent = formatPhotoCount(getWin().pendingImageAttachments.length);
   }
-  if (typeof attachmentModalImage !== 'undefined' && attachmentModalImage) {
-    attachmentModalImage.parentElement?.classList.add("loading");
-    attachmentModalImage.src = attachment.previewUrl;
-    attachmentModalImage.alt = attachment.file.name || "Photo";
-    attachmentModalImage.onload = () => {
-      attachmentModalImage.parentElement?.classList.remove("loading");
-    };
-    attachmentModalImage.onerror = () => {
-      attachmentModalImage.parentElement?.classList.remove("loading");
-    };
-    if (attachmentModalImage.complete && attachmentModalImage.naturalWidth > 0) {
-      attachmentModalImage.parentElement?.classList.remove("loading");
+
+  if (isMultiSelection) {
+    // Hide single photo stage and strip in favor of Telegram collage grid
+    if (stageEl instanceof HTMLElement) {
+      stageEl.hidden = true;
+      stageEl.style.display = "none";
+    }
+    if (typeof attachmentModalStrip !== 'undefined' && attachmentModalStrip) {
+      attachmentModalStrip.hidden = true;
+    }
+    if (attachmentModalCollage instanceof HTMLElement) {
+      const count = getWin().pendingImageAttachments.length;
+      attachmentModalCollage.className = getLegacyAttachmentCollageCountClass(count);
+      attachmentModalCollage.hidden = false;
+      attachmentModalCollage.style.display = "grid";
+      renderLegacyAttachmentPhotoCollage(
+        attachmentModalCollage,
+        buildLegacyAttachmentCollageItems(getWin().pendingImageAttachments),
+        {
+          removingIndex: collageRemovingIndex,
+          onRemove: handleRemovePhotoAttachment
+        }
+      );
+    }
+  } else {
+    // Single image mode
+    if (attachmentModalCollage instanceof HTMLElement) {
+      attachmentModalCollage.hidden = true;
+      attachmentModalCollage.style.display = "none";
+    }
+    if (typeof attachmentModalStrip !== 'undefined' && attachmentModalStrip) {
+      attachmentModalStrip.hidden = true;
+    }
+    if (stageEl instanceof HTMLElement) {
+      stageEl.hidden = false;
+      stageEl.style.display = "flex";
+    }
+    if (typeof attachmentModalImage !== 'undefined' && attachmentModalImage) {
+      attachmentModalImage.parentElement?.classList.add("loading");
+      attachmentModalImage.src = attachment.previewUrl;
+      attachmentModalImage.alt = attachment.file.name || "Photo";
+      attachmentModalImage.onload = () => {
+        attachmentModalImage.parentElement?.classList.remove("loading");
+      };
+      attachmentModalImage.onerror = () => {
+        attachmentModalImage.parentElement?.classList.remove("loading");
+      };
+      if (attachmentModalImage.complete && attachmentModalImage.naturalWidth > 0) {
+        attachmentModalImage.parentElement?.classList.remove("loading");
+      }
     }
   }
+
   if (typeof attachmentModalCaption !== 'undefined' && attachmentModalCaption) {
-    attachmentModalCaption.value = getWin().pendingImageCaption;
+    attachmentModalCaption.placeholder = (window as any).t ? (window as any).t("media.addCaption") : "Add a caption...";
+    attachmentModalCaption.value = getWin().pendingImageCaption || "";
+    if (attachmentModalCaption instanceof HTMLElement) {
+      attachmentModalCaption.style.height = "auto";
+      const h = Math.min(100, Math.max(24, attachmentModalCaption.scrollHeight));
+      attachmentModalCaption.style.height = h + "px";
+    }
   }
   if (typeof attachmentModalPrev !== 'undefined' && attachmentModalPrev) {
     attachmentModalPrev.hidden = true;
@@ -407,36 +525,12 @@ const renderAttachmentModal = (options: any = {}) => {
   if (typeof attachmentModalNext !== 'undefined' && attachmentModalNext) {
     attachmentModalNext.hidden = true;
   }
-  if (typeof attachmentModalStrip !== 'undefined' && attachmentModalStrip) {
-    attachmentModalStrip.hidden = getWin().pendingImageAttachments.length < 2;
-    attachmentModalStrip.innerHTML = getWin().pendingImageAttachments.map((entry: any, index: number) => {
-      return '<button class="attachment-modal-thumb' + (index === getWin().pendingImageAttachmentIndex ? ' active' : '') + '" type="button" data-attachment-index="' + index + '">' +
-        '<img src="' + escapeHtml(entry.previewUrl) + '" alt="' + escapeHtml(entry.file.name || "Photo") + '" />' +
-      '</button>';
-    }).join("");
-  }
 
   attachmentModal.classList.add("open");
   attachmentModal.setAttribute("aria-hidden", "false");
 
-  if (typeof attachmentModalStrip !== 'undefined' && attachmentModalStrip) {
-    attachmentModalStrip.querySelectorAll("[data-attachment-index]").forEach((button) => {
-      button.addEventListener("click", () => {
-        getWin().pendingImageAttachmentIndex = Number(button.getAttribute("data-attachment-index")) || 0;
-        renderAttachmentModal();
-      });
-    });
-  }
   if (preserveScroll && attachmentModalContent instanceof HTMLElement) {
     attachmentModalContent.scrollTop = getWin().pendingAttachmentModalScrollTop;
-  } else if (typeof attachmentModalStrip !== 'undefined' && attachmentModalStrip) {
-    const activeThumb = attachmentModalStrip.querySelector('[data-attachment-index="' + getWin().pendingImageAttachmentIndex + '"]');
-    if (activeThumb instanceof HTMLElement) {
-      activeThumb.scrollIntoView({
-        block: "nearest",
-        inline: "nearest"
-      });
-    }
   }
 };
 
@@ -520,10 +614,9 @@ const setPendingImageAttachment = (file: File) => {
 };
 
 const addPendingFileAttachments = async (files: FileList | File[]) => {
-  const validFiles = Array.from(files || []).filter((file) => file && String(file.type || "").startsWith("audio/"));
+  const validFiles = Array.from(files || []).filter((file) => Boolean(file && file.name));
 
   if (!validFiles.length) {
-    showToast("Only audio files are supported in File mode.", "error");
     return;
   }
 
@@ -542,7 +635,8 @@ const addPendingFileAttachments = async (files: FileList | File[]) => {
   const nextAttachments = await Promise.all(acceptedFiles.map(async (file) => {
     const previewUrl = URL.createObjectURL(file);
     let durationSeconds = 0;
-    if (typeof measureAudioDuration === 'function') {
+    const isAudio = String(file.type || "").startsWith("audio/") || file.name.match(/\.(mp3|wav|ogg|m4a|flac|aac)$/i);
+    if (isAudio && typeof measureAudioDuration === 'function') {
       durationSeconds = await measureAudioDuration(previewUrl);
     }
     return {

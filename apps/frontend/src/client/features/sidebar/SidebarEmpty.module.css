@@ -1,0 +1,16 @@
+.empty {
+  padding: 24px 16px;
+  color: rgba(0, 0, 0, 0.55);
+  font-size: 14px;
+}
+
+.empty strong {
+  display: block;
+  margin-bottom: 8px;
+  color: rgba(0, 0, 0, 0.8);
+}
+
+.empty p {
+  margin: 0;
+  line-height: 1.5;
+}

@@ -1,5 +1,5 @@
 // Profile Panel Service for Preact / TypeScript Migration
-export {};
+import { t } from "../i18n";
 
 declare const realtimeSocket: WebSocket | null;
 declare const currentDialogId: string;
@@ -106,11 +106,24 @@ declare const getAvatarMeta: (seed: any, label: any) => any;
 
 const getWin = () => window as any;
 
+const safeGetIcon = (name: string, extraClasses = "", attrs = ""): string => {
+  try {
+    const fn = (window as any).getIcon;
+    if (typeof fn === "function") {
+      return fn(name, extraClasses, attrs);
+    }
+  } catch (_) {}
+  return "";
+};
+
 let typingStopTimer: any = null;
 let groupMemberContextMenuCloseTimerLocal: any = null;
 let profileLinkContextMenuCloseTimerLocal: any = null;
 
 const sendTypingState = (isTyping: boolean) => {
+  if (isTyping && getWin().__THEGRAPHT_USER_SETTINGS__?.typingIndicators === false) {
+    return;
+  }
   const socket = getWin().realtimeSocket;
   if (!socket || socket.readyState !== WebSocket.OPEN || !getWin().currentDialogId) {
     return;
@@ -173,7 +186,7 @@ const resetWorkspaceState = () => {
   getWin().currentSearchResults = [];
   getWin().peerActiveInCurrentDialog = false;
   getWin().currentPeerReadAt = null;
-  if (getWin().onlineUserIds) {
+  if (getWin().onlineUserIds instanceof Set) {
     getWin().onlineUserIds.clear();
   }
   if (typeof clearTypingIndicators === 'function') {
@@ -231,6 +244,12 @@ const handleUnauthorizedSession = (
   toastType: string = "error",
   statusType: string = toastType === "success" ? "success" : "error"
 ) => {
+  // Close all open modals, sidebars, active sessions panels, and overlays
+  document.querySelectorAll(".sidebar-profile-panel, .session-confirm-modal-overlay, .media-modal, .avatar-upload-menu, .modal-overlay, [role='dialog']").forEach((el) => {
+    el.classList.remove("open", "active", "visible");
+    el.setAttribute("aria-hidden", "true");
+  });
+
   if (typeof getWin().disableRealtime === 'function') {
     getWin().disableRealtime();
   }
@@ -340,35 +359,38 @@ const getDialogAvatarMarkup = (dialog: any, options: any = {}) => {
     (dialog?.type === "secret" || dialog?.type === "direct" || dialog?.type === "private")
     && dialog?.encryptionMode === "e2e_v1"
   );
-  const secretBadgeTitle = "Secret chat. End-to-end encrypted.";
   const secretBadgeMarkup = (showSecretBadge && isSecretDirect)
-    ? '<span class="dialog-avatar-secret" title="' + escapeHtml(secretBadgeTitle) + '" aria-label="' + escapeHtml(secretBadgeTitle) + '">' + getWin().getIcon("lock") + '</span>'
+    ? '<span class="dialog-avatar-secret" data-chip-name="' + escapeHtml(t("profile.secretChatEncrypted")) + '" aria-label="' + escapeHtml(t("profile.secretChatEncrypted")) + '">' + safeGetIcon("lock") + '</span>'
     : "";
 
   if (dialog.type === "saved") {
-    const icon = getWin().getIcon ? getWin().getIcon("bookmark") : '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M19 21l-7-4-7 4V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v16z"></path></svg>';
+    const icon = '<svg viewBox="0 0 24 24" width="22" height="22" fill="#ffffff" stroke="#ffffff" stroke-width="1" aria-hidden="true"><path d="M19 21l-7-4-7 4V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v16z"></path></svg>';
     return '<div class="dialog-avatar saved-avatar">' + icon + '</div>';
   }
 
-  if (dialog.type === "direct" || dialog.type === "group") {
+  const isDirect = dialog.type === "direct" || dialog.type === "private" || dialog.type === "secret";
+  if (isDirect || dialog.type === "group" || dialog.type === "channel") {
+    const isOnline = showPresence && isDirect && isDirectDialogOnline(dialog);
+    const onlineLabel = escapeHtml(t("status.online") || "Online");
+    const presenceMarkup = (showPresence && isDirect)
+      ? '<span class="dialog-avatar-presence' + (isOnline ? ' online' : '') + '" ' + (isOnline ? 'data-tooltip="' + onlineLabel + '" aria-label="' + onlineLabel + '"' : '') + ' aria-hidden="true"></span>'
+      : "";
+    const avatarClass = isDirect ? "user-avatar" : (dialog.type === "channel" ? "channel-avatar" : "group-avatar");
+
     if (dialog.avatarUrl) {
-      return '<div class="dialog-avatar ' + (dialog.type === "direct" ? "user-avatar" : "group-avatar") + '">' +
+      return '<div class="dialog-avatar ' + avatarClass + '">' +
         '<img class="generated-avatar-photo" src="' + escapeHtml(String(dialog.avatarUrl)) + '" alt="' + escapeHtml((dialog.title || "?").slice(0, 1)) + '" />' +
-        (showPresence && dialog.type === "direct"
-          ? '<span class="dialog-avatar-presence' + (isDirectDialogOnline(dialog) ? ' online' : '') + '" aria-hidden="true"></span>'
-          : "") +
+        presenceMarkup +
         secretBadgeMarkup +
       '</div>';
     }
     const avatar = getAvatarMeta(
-      dialog.type === "direct" ? (dialog.peerUserId || dialog.publicId) : dialog.id,
+      isDirect ? (dialog.peerUserId || dialog.peerId || dialog.userId || dialog.publicId) : dialog.id,
       dialog.title || dialog.subtitle || "?"
     );
-    return '<div class="dialog-avatar ' + (dialog.type === "direct" ? "user-avatar" : "group-avatar") + '" style="' + avatar.style + '">' +
+    return '<div class="dialog-avatar ' + avatarClass + '" style="' + avatar.style + '">' +
       '<img class="generated-avatar-photo" src="' + avatar.avatarUrl + '" alt="' + avatar.letter + '" />' +
-      (showPresence && dialog.type === "direct"
-        ? '<span class="dialog-avatar-presence' + (isDirectDialogOnline(dialog) ? ' online' : '') + '" aria-hidden="true"></span>'
-        : "") +
+      presenceMarkup +
       secretBadgeMarkup +
     '</div>';
   }
@@ -380,21 +402,35 @@ const getDialogAvatarMarkup = (dialog: any, options: any = {}) => {
 };
 
 const isDirectDialogOnline = (dialog: any) => {
-  if (!(dialog?.type === "direct" && dialog.peerUserId)) {
+  if (!dialog) {
+    return false;
+  }
+  const isDirect = dialog.type === "direct" || dialog.type === "private" || dialog.type === "secret";
+  if (!isDirect) {
+    return false;
+  }
+  const peerUserId = String(dialog.peerUserId || dialog.peerId || dialog.userId || "").trim();
+  if (!peerUserId) {
     return false;
   }
 
   if (getWin().currentDialogId && dialog.id === getWin().currentDialogId && getWin().peerActiveInCurrentDialog) {
+    if (getWin().onlineUserIds instanceof Set) {
+      getWin().onlineUserIds.add(peerUserId);
+    }
     return true;
   }
 
-  return getWin().onlineUserIds ? getWin().onlineUserIds.has(dialog.peerUserId) : false;
+  return getWin().onlineUserIds ? getWin().onlineUserIds.has(peerUserId) : false;
 };
 
-const GROUP_NOTIFICATION_PREFS_STORAGE_KEY = "thegrapht_group_notification_prefs";
-const getGroupNotificationPrefs = () => {
+const DIALOG_NOTIFICATION_PREFS_STORAGE_KEY = "thegrapht_dialog_notification_prefs";
+const LEGACY_GROUP_NOTIFICATION_PREFS_STORAGE_KEY = "thegrapht_group_notification_prefs";
+
+const readDialogNotificationPrefs = () => {
   try {
-    const raw = localStorage.getItem(GROUP_NOTIFICATION_PREFS_STORAGE_KEY);
+    const raw = localStorage.getItem(DIALOG_NOTIFICATION_PREFS_STORAGE_KEY)
+      || localStorage.getItem(LEGACY_GROUP_NOTIFICATION_PREFS_STORAGE_KEY);
     const parsed = raw ? JSON.parse(raw) : {};
     return parsed && typeof parsed === "object" ? parsed : {};
   } catch {
@@ -402,32 +438,42 @@ const getGroupNotificationPrefs = () => {
   }
 };
 
-const isGroupNotificationsEnabled = (publicId: string) => {
-  if (!publicId) {
-    return false;
-  }
-  const prefs = getGroupNotificationPrefs();
-  return Boolean(prefs[String(publicId)] === true);
+const writeDialogNotificationPrefs = (prefs: Record<string, boolean>) => {
+  try {
+    localStorage.setItem(DIALOG_NOTIFICATION_PREFS_STORAGE_KEY, JSON.stringify(prefs));
+  } catch {}
 };
 
-const setGroupNotificationsEnabled = (publicId: string, enabled: boolean) => {
+const isDialogNotificationsEnabled = (publicId: string) => {
+  if (!publicId) {
+    return true;
+  }
+  const prefs = readDialogNotificationPrefs();
+  return prefs[String(publicId)] !== false;
+};
+
+const setDialogNotificationsEnabled = (publicId: string, enabled: boolean) => {
   if (!publicId) {
     return;
   }
-  try {
-    const prefs = getGroupNotificationPrefs();
-    prefs[String(publicId)] = Boolean(enabled);
-    localStorage.setItem(GROUP_NOTIFICATION_PREFS_STORAGE_KEY, JSON.stringify(prefs));
-  } catch {}
+  const prefs = readDialogNotificationPrefs();
+  prefs[String(publicId)] = Boolean(enabled);
+  writeDialogNotificationPrefs(prefs);
 };
+
+const isGroupNotificationsEnabled = isDialogNotificationsEnabled;
+const setGroupNotificationsEnabled = setDialogNotificationsEnabled;
 
 const syncGroupNotificationsToggle = () => {
   const toggle = document.getElementById("chat-profile-notifications-btn");
   if (!toggle) {
     return;
   }
-  const isGroup = getWin().currentDialogSnapshot?.type === "group";
-  const enabled = isGroup ? isGroupNotificationsEnabled(getWin().currentDialogSnapshot?.publicId) : false;
+  const dialogType = getWin().currentDialogSnapshot?.type;
+  const isGroupOrChannel = dialogType === "group" || dialogType === "channel";
+  const enabled = isGroupOrChannel
+    ? isDialogNotificationsEnabled(getWin().currentDialogSnapshot?.publicId)
+    : true;
   toggle.classList.toggle("is-on", enabled);
   toggle.setAttribute("aria-checked", enabled ? "true" : "false");
 };
@@ -460,16 +506,21 @@ const getGroupOnlineCount = (dialog: any) => {
 };
 
 const getTypingPreview = (dialog: any) => {
-  let typingUsers = [];
-  if (typeof getTypingUsersForDialog === 'function') {
-    typingUsers = getTypingUsersForDialog(dialog?.id);
+  if (!dialog?.id) return "";
+  const getTypingUsers = getWin().getTypingUsersForDialog;
+  let typingUsers: string[] = [];
+  if (typeof getTypingUsers === 'function') {
+    typingUsers = getTypingUsers(dialog.id);
   }
 
-  if (!typingUsers.length) {
+  if (!typingUsers || !typingUsers.length) {
     return "";
   }
 
-  return dialog?.type === "direct" ? "typing..." : "someone is typing...";
+  if (dialog.type === "direct") {
+    return t("status.typing") || "typing...";
+  }
+  return t("status.someoneTyping") || "someone is typing...";
 };
 
 const formatDialogSubtitle = (dialog: any) => {
@@ -484,32 +535,53 @@ const formatDialogSubtitle = (dialog: any) => {
   }
 
   if (dialog.type === "saved") {
-    return dialog.subtitle || getDialogSectionTitle(dialog.type);
+    // Telegram shows no subtitle for Saved Messages
+    return "";
   }
 
-  if (dialog.type === "direct") {
+  if (dialog.type === "direct" || dialog.type === "private") {
     if (dialog.encryptionMode === "e2e_v1") {
-      return "Secret chat • End-to-end encrypted";
+      return t("profile.secretChatEncrypted");
     }
 
     if (isDirectDialogOnline(dialog)) {
-      return "online";
+      return t("status.online");
     }
 
-    return "Cloud chat • " + (typeof formatLastSeen === 'function' ? formatLastSeen(dialog.peerLastSeenAt) : "");
+    const lastSeen = typeof formatLastSeen === 'function' ? formatLastSeen(dialog.peerLastSeenAt) : "";
+    return lastSeen ? lastSeen : t("status.recentlyOnline");
   }
 
   if (dialog.type === "group") {
     const participants = Number(dialog.participants) || 0;
-    const parts = ["Group"];
-    if (participants > 0) {
-      parts.push(participants + (participants === 1 ? " member" : " members"));
+    const formatGroupMembersCount = getWin().formatGroupMembersCount;
+    const parts = [];
+    if (participants > 0 && typeof formatGroupMembersCount === "function") {
+      parts.push(formatGroupMembersCount(participants));
+    } else if (participants > 0) {
+      parts.push(participants + " " + t("group.memberMany"));
+    } else {
+      parts.push(t("menu.newGroup"));
     }
     const onlineCount = getGroupOnlineCount(dialog);
     if (onlineCount > 0) {
-      parts.push(onlineCount + " online");
+      parts.push(onlineCount + " " + t("status.online"));
     }
-    return parts.join(" • ");
+    return parts.join(", ");
+  }
+
+  if (dialog.type === "channel") {
+    const participants = Number(dialog.participants) || 0;
+    const formatChannelSubscribersCount = getWin().formatChannelSubscribersCount;
+    const parts = [];
+    if (participants > 0 && typeof formatChannelSubscribersCount === "function") {
+      parts.push(formatChannelSubscribersCount(participants));
+    } else if (participants > 0) {
+      parts.push(participants + " " + t("channel.subscriberMany"));
+    } else {
+      parts.push(t("channel.subscribers"));
+    }
+    return parts.join(" · ");
   }
 
   const parts = [];
@@ -521,9 +593,14 @@ const formatDialogSubtitle = (dialog: any) => {
     parts.push(typeLabel);
   }
   if (dialog.participants) {
-    parts.push(dialog.participants + " members");
+    const formatGroupMembersCount = getWin().formatGroupMembersCount;
+    if (typeof formatGroupMembersCount === "function") {
+      parts.push(formatGroupMembersCount(Number(dialog.participants)));
+    } else {
+      parts.push(dialog.participants + " " + t("group.memberMany"));
+    }
   }
-  return parts.join(" • ");
+  return parts.join(", ");
 };
 
 const getDialogUsername = (dialog: any) => {
@@ -552,13 +629,16 @@ const getChatProfileDetails = (dialog: any) => {
     return null;
   }
 
-  if (dialog.type !== "direct" && dialog.type !== "saved" && dialog.type !== "group") {
+  if (dialog.type !== "direct" && dialog.type !== "saved" && dialog.type !== "group" && dialog.type !== "channel") {
     return null;
   }
 
-  const username = dialog.type === "group" ? dialog.publicId : getDialogUsername(dialog);
+  const username = dialog.type === "group"
+    ? dialog.publicId
+    : (dialog.type === "channel" ? (dialog.channelSlug || dialog.publicId) : getDialogUsername(dialog));
   const isSaved = dialog.type === "saved";
   const isGroup = dialog.type === "group";
+  const isChannel = dialog.type === "channel";
   const isSecretDialog = Boolean(
     (dialog?.type === "secret" || dialog?.type === "direct" || dialog?.type === "private")
     && dialog?.encryptionMode === "e2e_v1"
@@ -567,21 +647,25 @@ const getChatProfileDetails = (dialog: any) => {
     ? (getWin().currentUserDisplayName || getWin().currentUserUsername || dialog.title || "You")
     : (dialog.title || "Profile");
   const status = isSaved
-    ? "Your profile"
+    ? t("profile.yourProfile")
     : (
       isSecretDialog
-        ? "Secret chat • End-to-end encrypted"
+        ? t("profile.secretChatEncrypted")
         : (
           dialog?.type === "direct"
-            ? (isDirectDialogOnline(dialog) ? "online" : (typeof formatLastSeen === 'function' ? formatLastSeen(dialog?.peerLastSeenAt) : ""))
+            ? (isDirectDialogOnline(dialog) ? t("status.online") : (typeof formatLastSeen === 'function' ? formatLastSeen(dialog?.peerLastSeenAt) : ""))
             : formatDialogSubtitle(dialog)
         )
     );
   const avatar = getAvatarMeta(
-    isSaved ? (getWin().currentUserId || "saved-self") : (isGroup ? dialog.id : (dialog.peerUserId || dialog.publicId || dialog.id || name)),
+    isSaved
+      ? (getWin().currentUserId || "saved-self")
+      : (isGroup || isChannel ? dialog.id : (dialog.peerUserId || dialog.publicId || dialog.id || name)),
     name
   );
-  const usernameLabel = isGroup ? ("@" + username) : (username ? "@" + username : "username is not set yet");
+  const usernameLabel = isChannel
+    ? ("@" + (dialog.channelSlug || dialog.publicId))
+    : (isGroup ? ("@" + username) : (username ? "@" + username : "username is not set yet"));
   const encodeSecretRouteToken = (value: any) => {
     try {
       let token = window.btoa(unescape(encodeURIComponent(String(value || ""))));
@@ -594,15 +678,24 @@ const getChatProfileDetails = (dialog: any) => {
       return "";
     }
   };
-  const originUrl = window.location.origin;
-  const profileUrl = isGroup
-    ? (originUrl + "/g/" + dialog.publicId)
+  const getPublicAppOrigin = getWin().getPublicAppOrigin;
+  const originUrl = typeof getPublicAppOrigin === "function" ? getPublicAppOrigin() : window.location.origin;
+  const profileUrl = isChannel
+    ? (
+      dialog.channelVisibility === "public" && dialog.channelSlug
+        ? (originUrl + "/c/" + dialog.channelSlug)
+        : (dialog.channelInviteToken ? (originUrl + "/c/+" + dialog.channelInviteToken) : originUrl)
+    )
     : (
-      isSecretDialog
-        ? (username
-          ? (originUrl + "/@" + encodeURIComponent(username) + "/sc?s=" + encodeURIComponent(encodeSecretRouteToken(dialog.publicId || "")))
-          : originUrl)
-        : (username ? (originUrl + "/@" + encodeURIComponent(username)) : originUrl)
+      isGroup
+        ? (originUrl + "/g/" + dialog.publicId)
+        : (
+          isSecretDialog
+            ? (username
+              ? (originUrl + "/@" + encodeURIComponent(username) + "/sc?s=" + encodeURIComponent(encodeSecretRouteToken(dialog.publicId || "")))
+              : originUrl)
+            : (username ? (originUrl + "/@" + encodeURIComponent(username)) : originUrl)
+        )
     );
 
   return {
@@ -617,67 +710,141 @@ const getChatProfileDetails = (dialog: any) => {
 };
 
 const syncChatHeaderMeta = () => {
-  if (typeof chatHeaderAvatar === 'undefined' || !chatHeaderAvatar) {
+  const chatHeaderAvatarEl = document.getElementById("chat-header-avatar");
+  if (!chatHeaderAvatarEl) {
     return;
   }
 
-  if (!getWin().currentDialogSnapshot) {
-    chatHeaderAvatar.innerHTML = "";
+  const currentDialog = getWin().currentDialogSnapshot;
+  if (!currentDialog) {
+    chatHeaderAvatarEl.innerHTML = "";
+    chatHeaderAvatarEl.removeAttribute("data-rendered-dialog-id");
     return;
   }
 
-  chatHeaderAvatar.innerHTML = getDialogAvatarMarkup(getWin().currentDialogSnapshot, {
-    showPresence: getWin().currentDialogSnapshot.type === "direct"
-  });
+  const isDirect = currentDialog.type === "direct" || currentDialog.type === "private" || currentDialog.type === "secret";
+  const isOnline = isDirect && isDirectDialogOnline(currentDialog);
+  const avatarPresence = chatHeaderAvatarEl.querySelector(".dialog-avatar-presence");
+  const dialogKey = String(currentDialog.id || currentDialog.publicId || "");
+
+  if (chatHeaderAvatarEl.getAttribute("data-rendered-dialog-id") === dialogKey && avatarPresence) {
+    avatarPresence.classList.toggle("online", isOnline);
+    const onlineLabel = t("status.online") || "Online";
+    if (isOnline) {
+      avatarPresence.setAttribute("data-tooltip", onlineLabel);
+      avatarPresence.removeAttribute("title");
+      avatarPresence.setAttribute("aria-label", onlineLabel);
+    } else {
+      avatarPresence.removeAttribute("data-tooltip");
+      avatarPresence.removeAttribute("title");
+      avatarPresence.removeAttribute("aria-label");
+    }
+  } else {
+    chatHeaderAvatarEl.setAttribute("data-rendered-dialog-id", dialogKey);
+    chatHeaderAvatarEl.innerHTML = getDialogAvatarMarkup(currentDialog, {
+      showPresence: isDirect
+    });
+  }
 
   const syncDesktopTitlebarLocal = getWin().syncDesktopTitlebar;
   if (typeof syncDesktopTitlebarLocal === "function") {
-    syncDesktopTitlebarLocal(getWin().currentDialogSnapshot);
+    syncDesktopTitlebarLocal(currentDialog);
   }
 };
 
 const syncChatProfilePanel = () => {
-  if (typeof chatProfilePanel === 'undefined' || !chatProfilePanel) {
+  const chatProfilePanelEl = document.getElementById("chat-profile-panel");
+  if (!chatProfilePanelEl) {
     return;
   }
 
-  const details = getChatProfileDetails(getWin().currentDialogSnapshot);
+  const currentDialog = getWin().currentDialogSnapshot;
+  const details = getChatProfileDetails(currentDialog);
   if (!details) {
-    if (typeof chatWindow !== 'undefined' && chatWindow) {
-      chatWindow.classList.remove("profile-panel-open");
+    const chatWindowEl = document.getElementById("chat-window") || document.getElementById("workspace-view");
+    if (chatWindowEl) {
+      chatWindowEl.classList.remove("profile-panel-open");
     }
-    chatProfilePanel.classList.remove("open");
-    chatProfilePanel.setAttribute("aria-hidden", "true");
+    chatProfilePanelEl.classList.remove("open");
+    chatProfilePanelEl.setAttribute("aria-hidden", "true");
     return;
   }
 
-  if (typeof chatProfileAvatar !== 'undefined' && chatProfileAvatar) {
-    chatProfileAvatar.innerHTML = getDialogAvatarMarkup(getWin().currentDialogSnapshot, {
-      showPresence: getWin().currentDialogSnapshot.type === "direct"
-    });
-  }
-  if (typeof chatProfileName !== 'undefined' && chatProfileName) {
-    chatProfileName.textContent = details.name;
-  }
-  if (typeof chatProfileStatus !== 'undefined' && chatProfileStatus) {
-    chatProfileStatus.textContent = details.status || "profile";
+  const renderLegacyProfileSummary = getWin().renderLegacyProfileSummary;
+  if (!(typeof renderLegacyProfileSummary === "function" && currentDialog && renderLegacyProfileSummary(currentDialog))) {
+    const chatProfileAvatarEl = document.getElementById("chat-profile-avatar");
+    if (chatProfileAvatarEl) {
+      const isDirect = currentDialog?.type === "direct" || currentDialog?.type === "private" || currentDialog?.type === "secret";
+      const isOnline = isDirect && isDirectDialogOnline(currentDialog);
+      const profilePresence = chatProfileAvatarEl.querySelector(".dialog-avatar-presence");
+      const dialogKey = String(currentDialog?.id || currentDialog?.publicId || "");
+
+      if (chatProfileAvatarEl.getAttribute("data-rendered-dialog-id") === dialogKey && profilePresence) {
+        profilePresence.classList.toggle("online", isOnline);
+        const onlineLabel = t("status.online") || "Online";
+        if (isOnline) {
+          profilePresence.setAttribute("data-tooltip", onlineLabel);
+          profilePresence.removeAttribute("title");
+          profilePresence.setAttribute("aria-label", onlineLabel);
+        } else {
+          profilePresence.removeAttribute("data-tooltip");
+          profilePresence.removeAttribute("title");
+          profilePresence.removeAttribute("aria-label");
+        }
+      } else if (currentDialog) {
+        chatProfileAvatarEl.setAttribute("data-rendered-dialog-id", dialogKey);
+        chatProfileAvatarEl.innerHTML = getDialogAvatarMarkup(currentDialog, {
+          showPresence: isDirect
+        });
+      }
+    }
+    const chatProfileNameEl = document.getElementById("chat-profile-name");
+    if (chatProfileNameEl) {
+      chatProfileNameEl.textContent = details.name;
+    }
+    const chatProfileStatusEl = document.getElementById("chat-profile-status");
+    if (chatProfileStatusEl) {
+      chatProfileStatusEl.textContent = details.status || "profile";
+    }
   }
   
   const notificationsCard = document.getElementById("chat-profile-notifications-card");
   const secretCard = document.getElementById("chat-profile-secret-card");
-  
-  if (getWin().currentDialogSnapshot?.type === "group") {
-    if (notificationsCard) notificationsCard.style.display = "flex";
-  } else {
-    if (notificationsCard) notificationsCard.style.display = "none";
+  const descriptionCard = document.getElementById("chat-profile-description-card");
+  const descriptionEl = document.getElementById("chat-profile-description");
+  const qrButton = document.getElementById("chat-profile-qr-btn");
+
+  const isGroupOrChannel = currentDialog?.type === "group" || currentDialog?.type === "channel";
+  if (notificationsCard) {
+    notificationsCard.style.display = isGroupOrChannel ? "flex" : "none";
   }
   if (secretCard) {
     secretCard.style.display = "none";
   }
+
+  const descriptionText = currentDialog?.type === "channel"
+    ? String(currentDialog.channelDescription || "").trim()
+    : (currentDialog?.type === "group" ? String(currentDialog.groupDescription || "").trim() : "");
+  if (descriptionCard && descriptionEl) {
+    if (descriptionText) {
+      descriptionCard.style.display = "block";
+      descriptionEl.textContent = descriptionText;
+    } else {
+      descriptionCard.style.display = "none";
+      descriptionEl.textContent = "";
+    }
+  }
+
+  if (qrButton) {
+    qrButton.style.display = isGroupOrChannel ? "inline-flex" : "none";
+  }
   const linkLabel = document.getElementById("chat-profile-link-label");
-  const linkCard = typeof chatProfileLink !== 'undefined' && chatProfileLink ? chatProfileLink.closest(".chat-profile-card") as HTMLElement : null;
+  const chatProfileLinkEl = document.getElementById("chat-profile-link") as HTMLAnchorElement | null;
+  const linkCard = chatProfileLinkEl ? chatProfileLinkEl.closest(".chat-profile-card") as HTMLElement : null;
   if (linkLabel) {
-    linkLabel.textContent = getWin().currentDialogSnapshot?.type === "group" ? "Group link" : "Profile link";
+    linkLabel.textContent = currentDialog?.type === "group"
+      ? t("info.groupLink")
+      : (currentDialog?.type === "channel" ? t("info.channelLink") : t("info.profileLink"));
   }
   if (linkCard) {
     linkCard.style.display = details.isSecretDialog ? "none" : "block";
@@ -686,17 +853,20 @@ const syncChatProfilePanel = () => {
 
   const membersSection = document.getElementById("chat-profile-members-section");
   const membersList = document.getElementById("chat-profile-members-list");
-  
-  if (getWin().currentDialogSnapshot?.type === "group") {
-    if (membersSection) membersSection.style.display = "block";
-    if (membersList) {
-      const members = getGroupMembers(getWin().currentDialogSnapshot);
+
+  if (currentDialog?.type === "group") {
+    const renderLegacyProfileMembersList = getWin().renderLegacyProfileMembersList;
+    if (typeof renderLegacyProfileMembersList === "function") {
+      renderLegacyProfileMembersList(currentDialog);
+    } else if (membersSection && membersList) {
+      membersSection.style.display = "block";
+      const members = getGroupMembers(currentDialog);
       membersList.innerHTML = members.map((member) => {
-        const role = member.role === "owner" ? "owner" : (member.role === "admin" ? "admin" : "member");
+        const role = member.role === "owner" ? t("role.owner") : (member.role === "admin" ? t("role.admin") : t("role.member"));
         const memberUserId = String(member.userId || "").trim();
         const isSelfMember = memberUserId && memberUserId === String(getWin().currentUserId || "").trim();
         const statusText = isSelfMember || (getWin().onlineUserIds && getWin().onlineUserIds.has(memberUserId))
-          ? "online"
+          ? t("status.online")
           : (typeof formatLastSeen === 'function' ? formatLastSeen(member.lastSeenAt) : "");
         const displayName = String(member.name || member.username || "User");
         const avatar = getAvatarMeta(member.userId, displayName);
@@ -714,19 +884,34 @@ const syncChatProfilePanel = () => {
     }
   } else {
     if (membersSection) membersSection.style.display = "none";
+    const renderLegacyProfileMembersList = getWin().renderLegacyProfileMembersList;
+    if (typeof renderLegacyProfileMembersList === "function" && membersList) {
+      renderLegacyProfileMembersList(null);
+    } else if (membersList) {
+      membersList.innerHTML = "";
+    }
   }
 
-  if (!details.isSecretDialog && typeof chatProfileLink !== 'undefined' && chatProfileLink) {
+  const leaveChannelBtn = document.getElementById("chat-profile-leave-channel-btn");
+  if (leaveChannelBtn) {
+    const canLeaveChannel = currentDialog?.type === "channel"
+      && currentDialog.channelIsMember === true
+      && !currentDialog.channelCanPost;
+    leaveChannelBtn.hidden = !canLeaveChannel;
+  }
+
+  if (!details.isSecretDialog && chatProfileLinkEl) {
     const visibleProfileUrl = details.profileUrl.startsWith("https://")
       ? details.profileUrl.slice(8)
       : (details.profileUrl.startsWith("http://") ? details.profileUrl.slice(7) : details.profileUrl);
-    chatProfileLink.textContent = visibleProfileUrl;
-    chatProfileLink.href = details.profileUrl;
+    chatProfileLinkEl.textContent = visibleProfileUrl;
+    chatProfileLinkEl.href = details.profileUrl;
   }
 };
 
 const refreshCurrentDialogChrome = () => {
-  if (!getWin().currentDialogSnapshot) {
+  const currentDialog = getWin().currentDialogSnapshot;
+  if (!currentDialog) {
     syncChatHeaderMeta();
     if (typeof getWin().syncChatIslandActions === 'function') {
       getWin().syncChatIslandActions();
@@ -741,10 +926,24 @@ const refreshCurrentDialogChrome = () => {
   const chatTitle = document.getElementById("chat-title");
   const chatSubtitle = document.getElementById("chat-subtitle");
   if (chatTitle) {
-    chatTitle.textContent = getWin().currentDialogSnapshot.title || "";
+    chatTitle.textContent = currentDialog.title || "";
   }
   if (chatSubtitle) {
-    chatSubtitle.textContent = formatDialogSubtitle(getWin().currentDialogSnapshot);
+    if (getWin().connectionStatusManager?.getState?.() && getWin().connectionStatusManager.getState() !== "connected") {
+      // Keep displaying connection status in chat subtitle
+    } else {
+      const typingPreview = getTypingPreview(currentDialog);
+      const renderTypingFn = getWin().renderTypingPreviewHtml;
+      if (typingPreview && typeof renderTypingFn === "function") {
+        chatSubtitle.innerHTML = renderTypingFn(typingPreview);
+        chatSubtitle.style.color = "";
+        chatSubtitle.removeAttribute("data-connection-state");
+      } else {
+        chatSubtitle.textContent = formatDialogSubtitle(currentDialog);
+        chatSubtitle.style.color = "";
+        chatSubtitle.removeAttribute("data-connection-state");
+      }
+    }
   }
   syncChatHeaderMeta();
   syncChatProfilePanel();
@@ -754,13 +953,17 @@ const refreshCurrentDialogChrome = () => {
   if (typeof getWin().syncActiveCallChip === 'function') {
     getWin().syncActiveCallChip();
   }
-  if (typeof syncGroupCallBanner === "function") {
-    syncGroupCallBanner();
+  if (typeof getWin().syncGroupCallBanner === "function") {
+    getWin().syncGroupCallBanner();
+  }
+  if (typeof getWin().syncComposerState === "function") {
+    getWin().syncComposerState();
   }
 
-  if (typeof chatSearchPanel !== 'undefined' && chatSearchPanel && chatSearchPanel.classList.contains("open")) {
-    if (typeof renderChatSearchResults === 'function') {
-      renderChatSearchResults();
+  const chatSearchPanel = document.getElementById("chat-search-panel");
+  if (chatSearchPanel && chatSearchPanel.classList.contains("open")) {
+    if (typeof getWin().renderChatSearchResults === 'function') {
+      getWin().renderChatSearchResults();
     }
   }
 };
@@ -770,9 +973,10 @@ const closeGroupMemberContextMenu = () => {
     window.clearTimeout(groupMemberContextMenuCloseTimerLocal);
     groupMemberContextMenuCloseTimerLocal = null;
   }
-  if (typeof groupMemberContextMenu !== 'undefined' && groupMemberContextMenu) {
-    groupMemberContextMenu.classList.remove("open");
-    groupMemberContextMenu.setAttribute("aria-hidden", "true");
+  const groupMemberContextMenuEl = document.getElementById("group-member-context-menu");
+  if (groupMemberContextMenuEl) {
+    groupMemberContextMenuEl.classList.remove("open");
+    groupMemberContextMenuEl.setAttribute("aria-hidden", "true");
   }
   getWin().groupMemberContextMenuState = null;
 };
@@ -814,7 +1018,7 @@ const openProfileLinkContextMenu = (event: MouseEvent, profileUrl: string) => {
 
   profileLinkContextMenuBody.innerHTML =
     '<button class="dialog-context-menu-item" type="button" data-action="copy-username-link">' +
-      getWin().getIcon("content_copy", "", 'aria-hidden="true"') +
+      safeGetIcon("content_copy", "", 'aria-hidden="true"') +
       '<span>Copy Username</span>' +
     '</button>';
   getWin().profileLinkContextMenuState = { profileUrl: String(profileUrl) };
@@ -935,7 +1139,9 @@ const openDirectDialogForUser = async (targetUserId: string, options: any = {}) 
 };
 
 const openGroupMemberContextMenu = (event: MouseEvent, memberUserId: string) => {
-  if (typeof groupMemberContextMenu === 'undefined' || !groupMemberContextMenu || typeof groupMemberContextMenuBody === 'undefined' || !groupMemberContextMenuBody) {
+  const groupMemberContextMenuEl = document.getElementById("group-member-context-menu");
+  const groupMemberContextMenuBodyEl = document.getElementById("group-member-context-menu-body");
+  if (!groupMemberContextMenuEl || !groupMemberContextMenuBodyEl) {
     return;
   }
 
@@ -944,9 +1150,9 @@ const openGroupMemberContextMenu = (event: MouseEvent, memberUserId: string) => 
     return;
   }
 
-  groupMemberContextMenuBody.innerHTML =
+  groupMemberContextMenuBodyEl.innerHTML =
     '<button class="dialog-context-menu-item" type="button" data-action="send-message">' +
-      getWin().getIcon("chat", "", 'aria-hidden="true"') +
+      safeGetIcon("chat", "", 'aria-hidden="true"') +
       '<span>Send Message</span>' +
     '</button>';
   getWin().groupMemberContextMenuState = { userId };
@@ -955,12 +1161,12 @@ const openGroupMemberContextMenu = (event: MouseEvent, memberUserId: string) => 
   const menuHeight = 72;
   const left = Math.min(window.innerWidth - menuWidth - 12, Math.max(12, event.clientX));
   const top = Math.min(window.innerHeight - menuHeight - 12, Math.max(12, event.clientY));
-  groupMemberContextMenu.style.left = left + "px";
-  groupMemberContextMenu.style.top = top + "px";
-  groupMemberContextMenu.classList.add("open");
-  groupMemberContextMenu.setAttribute("aria-hidden", "false");
+  groupMemberContextMenuEl.style.left = left + "px";
+  groupMemberContextMenuEl.style.top = top + "px";
+  groupMemberContextMenuEl.classList.add("open");
+  groupMemberContextMenuEl.setAttribute("aria-hidden", "false");
 
-  groupMemberContextMenuBody.querySelectorAll("[data-action]").forEach((button) => {
+  groupMemberContextMenuBodyEl.querySelectorAll("[data-action]").forEach((button) => {
     button.addEventListener("click", () => {
       closeGroupMemberContextMenuSoon();
       void openDirectDialogForUser(userId, { openProfile: true });
@@ -969,28 +1175,33 @@ const openGroupMemberContextMenu = (event: MouseEvent, memberUserId: string) => 
 };
 
 const openChatProfilePanel = () => {
-  if (!getWin().currentDialogSnapshot || typeof chatProfilePanel === 'undefined' || !chatProfilePanel) {
+  const chatProfilePanelEl = document.getElementById("chat-profile-panel");
+  if (!getWin().currentDialogSnapshot || !chatProfilePanelEl) {
     return;
   }
 
+  getWin().closeEmojiPicker?.();
   syncChatProfilePanel();
-  if (typeof chatWindow !== 'undefined' && chatWindow) {
-    chatWindow.classList.add("profile-panel-open");
+  const chatWindowEl = document.getElementById("chat-window") || document.getElementById("workspace-view");
+  if (chatWindowEl) {
+    chatWindowEl.classList.add("profile-panel-open");
   }
-  chatProfilePanel.classList.add("open");
-  chatProfilePanel.setAttribute("aria-hidden", "false");
+  chatProfilePanelEl.classList.add("open");
+  chatProfilePanelEl.setAttribute("aria-hidden", "false");
 };
 
 const closeChatProfilePanel = () => {
-  if (typeof chatProfilePanel === 'undefined' || !chatProfilePanel) {
+  const chatProfilePanelEl = document.getElementById("chat-profile-panel");
+  if (!chatProfilePanelEl) {
     return;
   }
 
-  if (typeof chatWindow !== 'undefined' && chatWindow) {
-    chatWindow.classList.remove("profile-panel-open");
+  const chatWindowEl = document.getElementById("chat-window") || document.getElementById("workspace-view");
+  if (chatWindowEl) {
+    chatWindowEl.classList.remove("profile-panel-open");
   }
-  chatProfilePanel.classList.remove("open");
-  chatProfilePanel.setAttribute("aria-hidden", "true");
+  chatProfilePanelEl.classList.remove("open");
+  chatProfilePanelEl.setAttribute("aria-hidden", "true");
 };
 
 const handleViewerWheelZoom = (event: WheelEvent) => {
@@ -1030,7 +1241,7 @@ const disableRealtime = () => {
     getWin().realtimeDialogResyncTimer = null;
   }
 
-  if (getWin().onlineUserIds) {
+  if (getWin().onlineUserIds instanceof Set) {
     getWin().onlineUserIds.clear();
   }
   if (typeof clearTypingIndicators === 'function') {
@@ -1074,9 +1285,7 @@ const initProfilePanelEvents = () => {
   }
 
   if (typeof viewerModal !== 'undefined' && viewerModal) {
-    viewerModal.addEventListener("wheel", (event) => {
-      handleViewerWheelZoom(event as WheelEvent);
-    }, { passive: false });
+    // Wheel zoom is handled in viewer-modal.ts without requiring Ctrl.
   }
 
   document.addEventListener("click", () => {
@@ -1102,6 +1311,8 @@ getWin().getDialogTypeLabel = getDialogTypeLabel;
 getWin().getDialogSectionTitle = getDialogSectionTitle;
 getWin().getDialogTypeRank = getDialogTypeRank;
 getWin().getDialogAvatarMarkup = getDialogAvatarMarkup;
+getWin().isDialogNotificationsEnabled = isDialogNotificationsEnabled;
+getWin().setDialogNotificationsEnabled = setDialogNotificationsEnabled;
 getWin().isGroupNotificationsEnabled = isGroupNotificationsEnabled;
 getWin().setGroupNotificationsEnabled = setGroupNotificationsEnabled;
 getWin().syncGroupNotificationsToggle = syncGroupNotificationsToggle;

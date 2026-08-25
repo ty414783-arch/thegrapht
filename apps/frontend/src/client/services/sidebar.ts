@@ -1,5 +1,19 @@
 // Sidebar Navigation & AI Panel Service
-export {};
+import { LANGUAGES, getCurrentLanguageCode, setLanguageCode, applyTranslations, t } from "../i18n";
+import { createIdempotencyKey, THG_IDEMPOTENCY_HEADER } from "./thg-protocol-client";
+import { googleSpinnerMarkup } from "../../server/components/google-spinner.js";
+import { onDomReady } from "../shared/lib/on-dom-ready.ts";
+import { sendLegacyComposerMessage } from "../features/chat/legacyComposerSend.ts";
+import { mountLegacyComposer } from "../features/chat/mountLegacyComposer.tsx";
+import { mountLegacyDialogItemDom } from "../features/sidebar/legacyDialogItemMount.tsx";
+import { mountLegacyAttachMenu } from "../features/chat/mountLegacyAttachMenu.tsx";
+import { mountLegacyAttachmentModalShell } from "../features/media/legacyAttachmentModalMount.tsx";
+import {
+  getLegacyDialogContextMenuActions
+} from "../features/sidebar/legacyDialogContextMenuSync.ts";
+import {
+  renderLegacyDialogContextMenuBody
+} from "../features/sidebar/legacyDialogContextMenuMount.tsx";
 
 declare const getIcon: (name: string, extraClasses?: string, attrs?: string) => string;
 declare const getAvatarMeta: (seed: any, label: any) => any;
@@ -7,8 +21,6 @@ declare const escapeHtml: (v: any) => string;
 declare const formatLastSeen: (time: any) => string;
 declare const showToast: (message: string, type?: string) => void;
 declare const playSound: (kind: string) => void;
-declare const getDialogAvatarMarkup: (dialog: any, options?: any) => string;
-
 declare const getDialogScrollTop: (publicId: string) => number | null;
 declare const rememberCurrentDialogScrollTop: () => void;
 declare const getDialogPayloadCache: (publicId: string) => any;
@@ -21,6 +33,7 @@ declare const updateDialogInState: (dialog: any, meta?: any) => any;
 declare const prefetchDialogMedia: (messages: any[]) => void;
 declare const buildRenderableMessageItems: (messages: any[]) => any[];
 declare const annotateGroupIncomingSequences: (items: any[]) => any[];
+declare const annotateMessageSequences: (items: any[]) => any[];
 declare const renderDaySeparator: (val: any) => string;
 declare const renderAlbumMessage: (messages: any[], opts?: any) => string;
 declare const renderSingleMessage: (message: any, opts?: any) => string;
@@ -52,6 +65,8 @@ declare const readRecentEmojis: () => string[];
 declare const getEmojiAssetUrl: (char: string) => string;
 declare const rememberRecentEmoji: (char: string) => void;
 declare const emojiSections: Array<{ key: string; title: string; emojis: string[] }>;
+declare const emojiNames: Record<string, string[]>;
+let emojiPickerCloseTimer: any = null;
 declare const openAttachMenu: () => void;
 declare const closeAttachMenu: () => void;
 declare const scheduleAttachMenuClose: () => void;
@@ -79,6 +94,22 @@ declare const releasePrimaryTabOwnership: () => void;
 declare const systemPrompt: string;
 
 const getWin = () => window as any;
+const resolveDialogAvatarMarkup = (dialog: any, options: any = {}) => {
+  const fn = getWin().getDialogAvatarMarkup;
+  if (typeof fn === "function") {
+    return fn(dialog, options);
+  }
+  const title = String(dialog?.title || "?").slice(0, 1);
+  if (dialog?.avatarUrl) {
+    return '<div class="dialog-avatar"><img class="generated-avatar-photo" src="' + escapeHtml(String(dialog.avatarUrl)) + '" alt="' + escapeHtml(title) + '" /></div>';
+  }
+  const getAvatarMetaFn = getWin().getAvatarMeta;
+  if (typeof getAvatarMetaFn === "function") {
+    const avatar = getAvatarMetaFn(dialog?.id || dialog?.publicId, dialog?.title || "?");
+    return '<div class="dialog-avatar" style="' + avatar.style + '"><img class="generated-avatar-photo" src="' + avatar.avatarUrl + '" alt="' + avatar.letter + '" /></div>';
+  }
+  return '<div class="dialog-avatar">' + escapeHtml(title) + "</div>";
+};
 const GROUP_MAX_MEMBERS = 20000;
 
 // Module scoped state
@@ -89,11 +120,18 @@ let groupCreatePhotoDataUrl = "";
 let groupCreateNameTouched = false;
 let groupCreateRenderedSelectedDialogIds = new Set<string>();
 let groupCreateMode = "group"; // "group" | "secret"
+let channelCreateStep = 1;
+let channelCreatePhotoDataUrl = "";
+let channelCreateSlugStatus: "idle" | "checking" | "available" | "invalid" = "idle";
+let channelCreateSlugTimer: ReturnType<typeof setTimeout> | null = null;
+let channelCreateSlugRequestId = 0;
 
 let currentSearchQuery = "";
 let currentSearchResults: any[] = [];
+let currentSearchChannels: any[] = [];
 let searchDelayTimer: any = null;
 let searchRequestId = 0;
+const dismissedUnreadDividerDialogIds = new Set<string>();
 
 let dialogContextMenuCloseTimer: any = null;
 let dialogContextMenuState: any = null;
@@ -126,9 +164,27 @@ const decodeSecretRouteToken = (value: any) => {
   }
 };
 
+const getChannelRouteFromPath = () => {
+  const path = String(window.location.pathname || "");
+  if (!path.startsWith("/c/")) {
+    return null;
+  }
+  const rest = decodeURIComponent(path.slice(3)).trim();
+  if (!rest) {
+    return null;
+  }
+  if (rest.startsWith("+")) {
+    return { kind: "invite" as const, inviteToken: rest.slice(1) };
+  }
+  return { kind: "slug" as const, slug: rest.toLowerCase() };
+};
+
 const getRoutedPublicId = () => {
   const path = String(window.location.pathname || "/");
   if (!path || path === "/") {
+    return "";
+  }
+  if (getChannelRouteFromPath()) {
     return "";
   }
   const lowerPath = path.toLowerCase();
@@ -176,6 +232,14 @@ const resolveRoutePathForDialogPublicId = (publicId: string) => {
   }
   if (dialog.type === "group") {
     return "/g/" + publicId;
+  }
+  if (dialog.type === "channel") {
+    if (dialog.channelVisibility === "public" && dialog.channelSlug) {
+      return "/c/" + dialog.channelSlug;
+    }
+    if (dialog.channelInviteToken) {
+      return "/c/+" + dialog.channelInviteToken;
+    }
   }
   const isSecretDialog = Boolean(
     (dialog.type === "secret" || dialog.type === "direct" || dialog.type === "private")
@@ -290,18 +354,35 @@ const getDialogSortTimestamp = (dialog: any) => {
   return Number.isFinite(ts) ? ts : 0;
 };
 
+const ARCHIVED_DIALOGS_KEY = "thegrapht_archived_dialogs";
+let archiveViewOpen = false;
+
+const getArchivedDialogIds = (): string[] => {
+  try {
+    const raw = window.localStorage.getItem(ARCHIVED_DIALOGS_KEY);
+    const parsed = raw ? JSON.parse(raw) : [];
+    return Array.isArray(parsed) ? parsed.map((id) => String(id)) : [];
+  } catch {
+    return [];
+  }
+};
+
+const setArchivedDialogIds = (ids: string[]) => {
+  window.localStorage.setItem(ARCHIVED_DIALOGS_KEY, JSON.stringify(Array.from(new Set(ids))));
+};
+
+const isDialogArchived = (publicId: string) => getArchivedDialogIds().includes(String(publicId || ""));
+
 const getFilteredDialogs = (dialogs: any[]) => {
-  return dialogs.slice().sort((left, right) => {
-    const leftSaved = left?.type === "saved";
-    const rightSaved = right?.type === "saved";
-
-    if (leftSaved && !rightSaved) {
-      return -1;
-    }
-    if (!leftSaved && rightSaved) {
-      return 1;
-    }
-
+  const archivedIds = new Set(getArchivedDialogIds());
+  return dialogs
+    .filter((dialog) => !(dialog?.type === "channel" && dialog?.channelIsMember !== true))
+    .filter((dialog) => {
+      const archived = archivedIds.has(String(dialog?.publicId || ""));
+      return archiveViewOpen ? archived : !archived;
+    })
+    .slice()
+    .sort((left, right) => {
     const timeDelta = getDialogSortTimestamp(right) - getDialogSortTimestamp(left);
     if (timeDelta !== 0) {
       return timeDelta;
@@ -359,8 +440,22 @@ const applyRoute = (publicId: string) => {
   }
 };
 
+const formatApiError = (errorValue: unknown, fallback = "Request failed.") => {
+  if (typeof errorValue === "string" && errorValue.trim()) {
+    return errorValue;
+  }
+  if (errorValue && typeof errorValue === "object" && "message" in errorValue) {
+    const message = String((errorValue as { message?: unknown }).message || "").trim();
+    if (message) {
+      return message;
+    }
+  }
+  return fallback;
+};
+
 const fetchJson = async (url: string, options: any = {}) => {
   const requestHeaders = {
+    "X-THG-Protocol": "1",
     ...(options.headers || {})
   };
 
@@ -404,7 +499,7 @@ const fetchJson = async (url: string, options: any = {}) => {
         if (getWin().currentUserId) {
           const handleUnauthorizedSession = getWin().handleUnauthorizedSession;
           if (typeof handleUnauthorizedSession === "function") {
-            handleUnauthorizedSession(payload.error || "Session ended. Please sign in again.");
+            handleUnauthorizedSession(formatApiError(payload.error, "Session ended. Please sign in again."));
           }
         } else {
           const disableRealtime = getWin().disableRealtime;
@@ -414,10 +509,11 @@ const fetchJson = async (url: string, options: any = {}) => {
         }
       }
 
-      const rawErrorMsg = payload.error || "Request failed.";
+      const rawErrorMsg = formatApiError(payload.error);
       throw new Error(response.status === 401 ? rawErrorMsg + " (unauthorized)" : rawErrorMsg);
     }
 
+    getWin().connectionStatusManager?.markReachable?.();
     return payload;
   } finally {
     const finishTopProgress = getWin().finishTopProgress;
@@ -431,16 +527,21 @@ const warmupDialogMediaInBackground = (messages: any[] = [], options: any = {}) 
   const targetPublicId = String(options.targetPublicId || "");
   const targetLoadToken = Number(options.targetLoadToken) || 0;
   const start = () => {
-    void preloadDialogMediaDimensions(messages, {
-      limit: Number(options.limit) || 12,
-      chunkSize: Number(options.chunkSize) || 4,
-      timeBudgetMs: Number(options.timeBudgetMs) || 140,
-      shouldContinue: () => (
-        getWin().currentDialogPublicId === targetPublicId
-        && getWin().activeDialogLoadToken === targetLoadToken
-      )
-    });
-    prefetchDialogMedia(messages);
+    const preload = getWin().preloadDialogMediaDimensions;
+    if (typeof preload === "function") {
+      void preload(messages, {
+        limit: Number(options.limit) || 12,
+        chunkSize: Number(options.chunkSize) || 4,
+        timeBudgetMs: Number(options.timeBudgetMs) || 140,
+        shouldContinue: () => (
+          getWin().currentDialogPublicId === targetPublicId
+          && getWin().activeDialogLoadToken === targetLoadToken
+        )
+      });
+    }
+    if (typeof getWin().prefetchDialogMedia === "function") {
+      getWin().prefetchDialogMedia(messages);
+    }
   };
 
   const getIdle = (window as any).requestIdleCallback;
@@ -452,8 +553,9 @@ const warmupDialogMediaInBackground = (messages: any[] = [], options: any = {}) 
   window.setTimeout(start, 0);
 };
 
-// Global variables initialized on DOMContentLoaded
-document.addEventListener("DOMContentLoaded", () => {
+// Global variables initialized when the document can be queried
+onDomReady(() => {
+  mountLegacyAttachmentModalShell();
   const showToast = (message: string, type = "info") => getWin().showToast?.(message, type);
   const openEmojiPicker = () => getWin().openEmojiPicker?.();
   const closeEmojiPicker = () => getWin().closeEmojiPicker?.();
@@ -521,6 +623,7 @@ document.addEventListener("DOMContentLoaded", () => {
   const sidebarComposeGroup = document.getElementById("sidebar-compose-group");
   const sidebarComposePrivate = document.getElementById("sidebar-compose-private");
   const groupCreatePanel = document.getElementById("group-create-panel");
+  const channelCreatePanel = document.getElementById("channel-create-panel");
 
   const setStatus = (message: string, type: string) => {
     const statusNode = document.getElementById("status");
@@ -555,6 +658,24 @@ document.addEventListener("DOMContentLoaded", () => {
   const groupCreateNameInput = document.getElementById("group-create-name-input") as HTMLInputElement;
   const groupCreateMemberCount = document.getElementById("group-create-member-count");
   const groupCreateDetailsList = document.getElementById("group-create-details-list");
+
+  const channelCreateClose = document.getElementById("channel-create-close");
+  const channelCreateTypeBack = document.getElementById("channel-create-type-back");
+  const channelCreatePhotoButton = document.getElementById("channel-create-photo-button");
+  const channelCreatePhotoInput = document.getElementById("channel-create-photo-input") as HTMLInputElement;
+  const channelCreatePhotoPreview = document.getElementById("channel-create-photo-preview") as HTMLImageElement;
+  const channelCreateNameInput = document.getElementById("channel-create-name-input") as HTMLInputElement;
+  const channelCreateDescriptionInput = document.getElementById("channel-create-description-input") as HTMLTextAreaElement;
+  const channelCreateNext = document.getElementById("channel-create-next");
+  const channelCreateSubmit = document.getElementById("channel-create-submit");
+  const channelCreatePublicLinkWrap = document.getElementById("channel-create-public-link-wrap");
+  const channelCreatePrivateLinkWrap = document.getElementById("channel-create-private-link-wrap");
+  const channelCreateSlugField = document.getElementById("channel-create-slug-field");
+  const channelCreateSlugPrefix = document.getElementById("channel-create-slug-prefix");
+  const channelCreateSlugInput = document.getElementById("channel-create-slug-input") as HTMLInputElement;
+  const channelCreateSlugError = document.getElementById("channel-create-slug-error");
+  const channelCreatePrivateLinkPreview = document.getElementById("channel-create-private-link-preview");
+  const channelVisibilityInputs = Array.from(document.querySelectorAll('input[name="channel-visibility"]')) as HTMLInputElement[];
 
   const authCopyBlock = document.getElementById("auth-copy-block");
   const authKicker = document.getElementById("auth-kicker");
@@ -606,6 +727,7 @@ document.addEventListener("DOMContentLoaded", () => {
   const emojiPickerSlideTrack = document.getElementById("emoji-picker-slide-track");
 
   const composerAttachButton = document.getElementById("composer-attach-button");
+  mountLegacyAttachMenu();
   const attachMenu = document.getElementById("attach-menu");
   const composerEmojiButton = document.getElementById("composer-emoji-button");
   const groupCallJoinStrip = document.getElementById("group-call-join-strip");
@@ -614,6 +736,8 @@ document.addEventListener("DOMContentLoaded", () => {
   const composerAttachmentRemove = document.getElementById("composer-attachment-remove");
 
   const attachmentModalClose = document.getElementById("attachment-modal-close");
+  const attachmentModalAdd = document.getElementById("attachment-modal-add");
+  const attachmentModalCancel = document.getElementById("attachment-modal-cancel");
   const attachmentModalPrev = document.getElementById("attachment-modal-prev");
   const attachmentModalNext = document.getElementById("attachment-modal-next");
   const attachmentModalSend = document.getElementById("attachment-modal-send") as HTMLButtonElement;
@@ -669,6 +793,80 @@ document.addEventListener("DOMContentLoaded", () => {
     setSidebarComposeOpen(!isOpen);
   };
 
+  const sidebarComposeFabRound = document.getElementById("sidebar-compose-fab-round");
+  sidebarComposeFabRound?.addEventListener("click", () => {
+    toggleSidebarComposeMenu();
+  });
+  sidebarComposeFab?.addEventListener("click", () => {
+    toggleSidebarComposeMenu();
+  });
+
+  const globalChipTooltip = document.getElementById("group-chip-tooltip-global");
+
+  const hideGlobalChipTooltip = () => {
+    if (!globalChipTooltip) return;
+    globalChipTooltip.classList.remove("visible");
+    globalChipTooltip.setAttribute("aria-hidden", "true");
+  };
+
+  const showGlobalChipTooltip = (chipElement: HTMLElement, text: string) => {
+    if (!globalChipTooltip || !chipElement || !text) return;
+    globalChipTooltip.textContent = text;
+    const rect = chipElement.getBoundingClientRect();
+    const tooltipWidth = globalChipTooltip.offsetWidth || 120;
+    const tooltipHeight = globalChipTooltip.offsetHeight || 32;
+
+    let left = rect.left + rect.width / 2 - tooltipWidth / 2;
+    let top = rect.top - tooltipHeight - 8;
+
+    if (top < 10) {
+      top = rect.bottom + 8;
+      globalChipTooltip.classList.add("position-below");
+    } else {
+      globalChipTooltip.classList.remove("position-below");
+    }
+
+    left = Math.max(12, Math.min(window.innerWidth - tooltipWidth - 12, left));
+
+    globalChipTooltip.style.left = `${left}px`;
+    globalChipTooltip.style.top = `${top}px`;
+    globalChipTooltip.classList.add("visible");
+    globalChipTooltip.setAttribute("aria-hidden", "false");
+  };
+
+  document.addEventListener("mouseover", (event) => {
+    const target = event.target as HTMLElement;
+    if (!target) return;
+
+    const secretTarget = target.closest?.(".dialog-avatar-secret") as HTMLElement | null;
+    if (secretTarget) {
+      const tooltipText = secretTarget.getAttribute("data-chip-name") || secretTarget.getAttribute("aria-label") || t("profile.secretChatEncrypted");
+      showGlobalChipTooltip(secretTarget, tooltipText);
+      return;
+    }
+
+    const avatarTarget = target.closest?.("#chat-profile-avatar, #chat-header-avatar, .chat-profile-avatar, .profile-panel-avatar") as HTMLElement | null;
+    if (avatarTarget) {
+      showGlobalChipTooltip(avatarTarget, t("profile.viewPhoto"));
+      return;
+    }
+  }, true);
+
+  document.addEventListener("mouseout", (event) => {
+    const target = event.target as HTMLElement;
+    if (!target) return;
+
+    const secretTarget = target.closest?.(".dialog-avatar-secret");
+    const avatarTarget = target.closest?.("#chat-profile-avatar, #chat-header-avatar, .chat-profile-avatar, .profile-panel-avatar");
+    if (secretTarget || avatarTarget) {
+      hideGlobalChipTooltip();
+    }
+  }, true);
+
+  document.addEventListener("mousedown", () => {
+    hideGlobalChipTooltip();
+  }, true);
+
   const renderGroupCreateSelected = (candidates: any[]) => {
     if (!groupCreateSelected) {
       return;
@@ -678,12 +876,26 @@ document.addEventListener("DOMContentLoaded", () => {
     groupCreateSelected.innerHTML = selectedCandidates.map((dialog) => {
       const dialogId = String(dialog.id);
       const isNewSelected = !groupCreateRenderedSelectedDialogIds.has(dialogId);
-      return '<div class="group-selected-chip' + (isNewSelected ? " is-new" : "") + '" title="' + escapeHtml(dialog.title || "User") + '">' +
-        getDialogAvatarMarkup(dialog, { showPresence: false }) +
+      const name = dialog.title || "User";
+      return '<div class="group-selected-chip' + (isNewSelected ? " is-new" : "") + '" data-chip-name="' + escapeHtml(name) + '">' +
+        resolveDialogAvatarMarkup(dialog, { showPresence: false }) +
       '</div>';
     }).join("");
     groupCreateRenderedSelectedDialogIds = selectedDialogIds;
+
+    groupCreateSelected.querySelectorAll(".group-selected-chip").forEach((chip) => {
+      const name = chip.getAttribute("data-chip-name");
+      if (!name) return;
+      chip.addEventListener("mouseenter", () => {
+        showGlobalChipTooltip(chip as HTMLElement, name);
+      });
+      chip.addEventListener("mouseleave", () => {
+        hideGlobalChipTooltip();
+      });
+    });
   };
+
+  groupCreateSelected?.addEventListener("scroll", hideGlobalChipTooltip);
 
   const setGroupCreateStep = (step: number) => {
     groupCreateStep = step === 2 ? 2 : 1;
@@ -699,13 +911,16 @@ document.addEventListener("DOMContentLoaded", () => {
     const selectedCandidates = getGroupCreateSelectedCandidates();
     const membersCount = selectedCandidates.length;
     if (groupCreateMemberCount) {
-      groupCreateMemberCount.textContent = membersCount === 1 ? "1 member" : String(membersCount) + " members";
+      const formatGroupMembersCount = getWin().formatGroupMembersCount;
+      groupCreateMemberCount.textContent = typeof formatGroupMembersCount === "function"
+        ? formatGroupMembersCount(membersCount)
+        : (membersCount === 1 ? ("1 " + t("group.memberOne")) : (String(membersCount) + " " + t("group.memberMany")));
     }
     if (groupCreateDetailsList) {
       groupCreateDetailsList.innerHTML = selectedCandidates.map((dialog) => {
-        const statusText = formatDialogSubtitle(dialog) || "last seen recently";
+        const statusText = formatDialogSubtitle(dialog) || t("status.recentlyOnline");
         return '<div class="group-create-details-item">' +
-          getDialogAvatarMarkup(dialog) +
+          resolveDialogAvatarMarkup(dialog) +
           '<div class="group-create-body">' +
             '<p class="group-create-name">' + escapeHtml(dialog.title || "User") + '</p>' +
             '<p class="group-create-status">' + escapeHtml(statusText) + '</p>' +
@@ -732,7 +947,7 @@ document.addEventListener("DOMContentLoaded", () => {
       : candidates;
 
     if (!filtered.length) {
-      groupCreateList.innerHTML = '<div class="group-create-empty">No people found.</div>';
+      groupCreateList.innerHTML = '<div class="group-create-empty" data-i18n="group.noPeopleFound">' + escapeHtml(t("group.noPeopleFound")) + '</div>';
       renderGroupCreateSelected(candidates);
       syncGroupCreateNextButtonState();
       return;
@@ -743,11 +958,11 @@ document.addEventListener("DOMContentLoaded", () => {
       const isSelected = groupCreateSelectedDialogIds.has(dialogId);
       const isUnavailable = Boolean(dialog.unavailable);
       const statusText = isUnavailable
-        ? "Secret chat already exists"
+        ? t("group.secretChatAlreadyExists")
         : (formatDialogSubtitle(dialog) || "last seen recently");
       return '<button class="group-create-item' + (isSelected ? " selected" : "") + (isUnavailable ? " unavailable" : "") + '" type="button" data-group-dialog-id="' + escapeHtml(dialogId) + '" ' + (isUnavailable ? 'disabled aria-disabled="true"' : "") + '>' +
         '<span class="group-create-check">' + getIcon("check", "", 'aria-hidden="true"') + '</span>' +
-        getDialogAvatarMarkup(dialog) +
+        resolveDialogAvatarMarkup(dialog) +
         '<div class="group-create-body">' +
           '<p class="group-create-name">' + escapeHtml(dialog.title || "User") + '</p>' +
           '<p class="group-create-status">' + escapeHtml(statusText) + '</p>' +
@@ -795,15 +1010,16 @@ document.addEventListener("DOMContentLoaded", () => {
     workspaceSidebar?.classList.remove("group-create-step2-open");
     groupCreateMode = "group";
     if (groupCreateStepMembersTitle) {
-      groupCreateStepMembersTitle.textContent = "Add Members";
+      groupCreateStepMembersTitle.textContent = t("group.addMembers");
     }
     if (groupCreateSearchInput) {
-      groupCreateSearchInput.placeholder = "Add people...";
+      groupCreateSearchInput.placeholder = t("group.addPeople");
     }
     setGroupCreateStep(1);
   };
 
   const openGroupCreatePanel = () => {
+    closeChannelCreatePanel();
     setSidebarComposeOpen(false);
     setSidebarMenuOpen(false);
     groupCreateSearchQuery = "";
@@ -833,16 +1049,187 @@ document.addEventListener("DOMContentLoaded", () => {
   const openSecretCreatePanel = () => {
     groupCreateMode = "secret";
     if (groupCreateStepMembersTitle) {
-      groupCreateStepMembersTitle.textContent = "New Secret Chat";
+      groupCreateStepMembersTitle.textContent = t("menu.newSecretChat");
     }
     if (groupCreateSearchInput) {
-      groupCreateSearchInput.placeholder = "Who do you want to chat with?";
+      groupCreateSearchInput.placeholder = t("group.whoToChatWith");
     }
     if (groupCreateNameInput) {
       groupCreateNameInput.value = "";
     }
     setGroupCreateStep(1);
     openGroupCreatePanel();
+  };
+
+  const getChannelLinkHost = () => {
+    const hostFn = getWin().getPublicAppHost;
+    if (typeof hostFn === "function") {
+      return hostFn();
+    }
+    const hostname = window.location.hostname || "";
+    if (hostname.includes("dev.thegrapht.su") || hostname === "localhost" || hostname === "127.0.0.1") {
+      return "dev.thegrapht.su";
+    }
+    return "web.thegrapht.su";
+  };
+
+  const getSelectedChannelVisibility = () => {
+    const selected = channelVisibilityInputs.find((input) => input.checked);
+    return selected?.value === "public" ? "public" : "private";
+  };
+
+  const syncChannelCreateVisibilityUi = () => {
+    const visibility = getSelectedChannelVisibility();
+    const isPublic = visibility === "public";
+    if (channelCreatePublicLinkWrap) {
+      channelCreatePublicLinkWrap.hidden = !isPublic;
+    }
+    if (channelCreatePrivateLinkWrap) {
+      channelCreatePrivateLinkWrap.hidden = isPublic;
+    }
+    if (channelCreateSlugPrefix) {
+      channelCreateSlugPrefix.textContent = getChannelLinkHost() + "/c/";
+    }
+    if (channelCreatePrivateLinkPreview) {
+      channelCreatePrivateLinkPreview.textContent = window.location.protocol + "//" + getChannelLinkHost() + "/c/+…";
+    }
+    syncChannelCreateActions();
+  };
+
+  const syncChannelSlugValidationUi = () => {
+    const isPublic = getSelectedChannelVisibility() === "public";
+    const slugValue = channelCreateSlugInput ? (channelCreateSlugInput.value || "").trim().toLowerCase() : "";
+    const showInvalid = isPublic && channelCreateStep === 2 && slugValue && channelCreateSlugStatus === "invalid";
+    channelCreateSlugField?.classList.toggle("is-invalid", Boolean(showInvalid));
+    if (channelCreateSlugError) {
+      channelCreateSlugError.hidden = !showInvalid;
+      if (!showInvalid) {
+        channelCreateSlugError.textContent = t("channel.linkInvalid");
+      }
+    }
+    syncChannelCreateActions();
+  };
+
+  const syncChannelCreateActions = () => {
+    const channelName = channelCreateNameInput ? (channelCreateNameInput.value || "").trim() : "";
+    const canProceedStep1 = Boolean(channelName);
+    const isPublic = getSelectedChannelVisibility() === "public";
+    const slugValue = channelCreateSlugInput ? (channelCreateSlugInput.value || "").trim().toLowerCase() : "";
+    const canSubmit = channelCreateStep === 2 && (
+      !isPublic || (slugValue && channelCreateSlugStatus === "available")
+    );
+    const panelOpen = Boolean(channelCreatePanel?.classList.contains("open"));
+    workspaceSidebar?.classList.toggle("channel-create-open", panelOpen);
+    workspaceSidebar?.classList.toggle("channel-create-next-enabled", panelOpen && channelCreateStep === 1 && canProceedStep1);
+    workspaceSidebar?.classList.toggle("channel-create-step2-open", panelOpen && channelCreateStep === 2);
+    workspaceSidebar?.classList.toggle("channel-create-submit-enabled", panelOpen && Boolean(canSubmit));
+  };
+
+  const setChannelCreateStep = (nextStep: number) => {
+    channelCreateStep = nextStep === 2 ? 2 : 1;
+    syncChannelCreateActions();
+    syncChannelSlugValidationUi();
+  };
+
+  const resetChannelSlugCheck = () => {
+    channelCreateSlugStatus = "idle";
+    if (channelCreateSlugTimer) {
+      window.clearTimeout(channelCreateSlugTimer);
+      channelCreateSlugTimer = null;
+    }
+    syncChannelSlugValidationUi();
+  };
+
+  const scheduleChannelSlugCheck = () => {
+    const slugValue = channelCreateSlugInput ? (channelCreateSlugInput.value || "").trim().toLowerCase() : "";
+    if (channelCreateSlugTimer) {
+      window.clearTimeout(channelCreateSlugTimer);
+      channelCreateSlugTimer = null;
+    }
+    if (!slugValue || getSelectedChannelVisibility() !== "public") {
+      resetChannelSlugCheck();
+      return;
+    }
+    channelCreateSlugStatus = "checking";
+    syncChannelSlugValidationUi();
+    const requestId = ++channelCreateSlugRequestId;
+    channelCreateSlugTimer = window.setTimeout(() => {
+      void (async () => {
+        try {
+          const apiBase = getWin().apiBase || "/api";
+          const payload = await fetchJson(apiBase + "/v1/channels/slug-available?slug=" + encodeURIComponent(slugValue));
+          if (requestId !== channelCreateSlugRequestId) {
+            return;
+          }
+          channelCreateSlugStatus = payload.available ? "available" : "invalid";
+        } catch {
+          if (requestId !== channelCreateSlugRequestId) {
+            return;
+          }
+          channelCreateSlugStatus = "invalid";
+        }
+        syncChannelSlugValidationUi();
+      })();
+    }, 320);
+  };
+
+  const closeChannelCreatePanel = () => {
+    gsapCloseSidebar(channelCreatePanel);
+    workspaceSidebar?.classList.remove("channel-create-open");
+    workspaceSidebar?.classList.remove("channel-create-next-enabled");
+    workspaceSidebar?.classList.remove("channel-create-step2-open");
+    workspaceSidebar?.classList.remove("channel-create-submit-enabled");
+    channelCreatePhotoDataUrl = "";
+    channelCreateStep = 1;
+    resetChannelSlugCheck();
+    if (channelCreatePhotoPreview) {
+      channelCreatePhotoPreview.removeAttribute("src");
+    }
+    channelCreatePhotoButton?.classList.remove("has-photo");
+    if (channelCreateNameInput) {
+      channelCreateNameInput.value = "";
+    }
+    if (channelCreateDescriptionInput) {
+      channelCreateDescriptionInput.value = "";
+    }
+    if (channelCreateSlugInput) {
+      channelCreateSlugInput.value = "";
+    }
+    channelVisibilityInputs.forEach((input, index) => {
+      input.checked = index === 0;
+    });
+    syncChannelCreateVisibilityUi();
+    setChannelCreateStep(1);
+  };
+
+  const openChannelCreatePanel = () => {
+    closeGroupCreatePanel();
+    setSidebarComposeOpen(false);
+    setSidebarMenuOpen(false);
+    channelCreatePhotoDataUrl = "";
+    resetChannelSlugCheck();
+    if (channelCreatePhotoPreview) {
+      channelCreatePhotoPreview.removeAttribute("src");
+    }
+    channelCreatePhotoButton?.classList.remove("has-photo");
+    if (channelCreateNameInput) {
+      channelCreateNameInput.value = "";
+    }
+    if (channelCreateDescriptionInput) {
+      channelCreateDescriptionInput.value = "";
+    }
+    if (channelCreateSlugInput) {
+      channelCreateSlugInput.value = "";
+    }
+    channelVisibilityInputs.forEach((input, index) => {
+      input.checked = index === 0;
+    });
+    gsapOpenSidebar(channelCreatePanel);
+    syncChannelCreateVisibilityUi();
+    setChannelCreateStep(1);
+    window.setTimeout(() => {
+      channelCreateNameInput?.focus();
+    }, 40);
   };
 
   const animateModeChange = (nextMode: string) => {
@@ -889,27 +1276,33 @@ document.addEventListener("DOMContentLoaded", () => {
     if (bootSplash) {
       bootSplash.classList.add("hidden");
       window.dispatchEvent(new CustomEvent("thegrapht:boot-splash-hidden"));
+      window.setTimeout(() => {
+        if (bootSplash.parentNode) {
+          bootSplash.remove();
+        }
+      }, 280);
     }
   };
 
-  const finishBoot = async (showWorkspace: boolean) => {
-    const wasBooting = pageRoot?.classList.contains("booting");
-    const ensureBootMinDuration = getWin().ensureBootMinDuration;
-    if (typeof ensureBootMinDuration === "function") {
-      await ensureBootMinDuration();
-    }
+  const finishBoot = (showWorkspace: boolean) => {
     switchView(showWorkspace);
     pageRoot?.classList.remove("booting");
     hideBootSplash();
+    getWin().__THEGRAPHT_STORE_ACTIONS__?.uiActions?.setBootComplete?.(true);
     const finishAllTopProgress = getWin().finishAllTopProgress;
     if (typeof finishAllTopProgress === "function") {
       finishAllTopProgress();
     }
-    if (showWorkspace && wasBooting && chatWindow) {
-      chatWindow.classList.remove("motion-enter");
-      void chatWindow.offsetWidth;
-      chatWindow.classList.add("motion-enter");
+    if (showWorkspace) {
       animateDialogListItems();
+      scheduleEmojiPickerWarmup();
+    }
+  };
+
+  const scheduleEmojiPickerWarmup = () => {
+    const warmup = getWin().scheduleEmojiPickerWarmup;
+    if (typeof warmup === "function") {
+      warmup();
     }
   };
 
@@ -918,13 +1311,11 @@ document.addEventListener("DOMContentLoaded", () => {
     dialogList.classList.remove("search-empty");
     dialogList.classList.add("search-loading");
     dialogList.innerHTML =
-      '<div class="search-loading-state">' +
-        '<div class="search-spinner" aria-hidden="true"></div>' +
-      '</div>';
+      '<div class="search-loading-state">' + googleSpinnerMarkup(40) + '</div>';
     animateDialogListItems();
   };
 
-  const renderSearchResults = (users: any[]) => {
+  const renderSearchResults = (users: any[], channels: any[] = currentSearchChannels) => {
     if (!dialogList) return;
     dialogList.classList.remove("search-loading");
     dialogList.classList.remove("search-empty");
@@ -950,8 +1341,9 @@ document.addEventListener("DOMContentLoaded", () => {
           ...users.filter((user) => user.id !== getWin().currentUserId)
         ]
       : users;
+    const visibleChannels = Array.isArray(channels) ? channels : [];
 
-    if (!visibleUsers.length) {
+    if (!visibleUsers.length && !visibleChannels.length) {
       dialogList.classList.add("search-empty");
       const emptyVideo = getWin().searchEmptyVideoUrl || "";
       dialogList.innerHTML =
@@ -959,14 +1351,25 @@ document.addEventListener("DOMContentLoaded", () => {
           '<video autoplay muted loop playsinline preload="auto" aria-hidden="true">' +
             '<source src="' + escapeHtml(emptyVideo) + '" type="video/mp4" />' +
           '</video>' +
-          '<p class="search-empty-title">No results found</p>' +
-          '<p class="search-empty-copy">Try another username or clear the search.</p>' +
+          '<p class="search-empty-title">' + escapeHtml(t("search.noResultsTitle")) + '</p>' +
+          '<p class="search-empty-copy">' + escapeHtml(t("search.noResultsDesc")) + '</p>' +
         '</div>';
       animateDialogListItems();
       return;
     }
 
-    dialogList.innerHTML = visibleUsers.map((user) => {
+    const channelMarkup = visibleChannels.map((channel) => {
+      const avatar = getAvatarMeta(channel.publicId || channel.id, channel.title || "Channel");
+      return '<button class="dialog-item" type="button" data-search-channel-id="' + escapeHtml(channel.publicId || "") + '">' +
+        '<div class="dialog-avatar group-avatar" style="' + avatar.style + '"><img class="generated-avatar-photo" src="' + avatar.avatarUrl + '" alt="' + avatar.letter + '" /></div>' +
+        '<div class="dialog-body">' +
+          '<div class="dialog-line only-title"><strong>' + escapeHtml(channel.title || "Channel") + '</strong></div>' +
+          '<p class="dialog-preview">@' + escapeHtml(channel.channelSlug || "channel") + '</p>' +
+        '</div>' +
+      '</button>';
+    }).join("");
+
+    dialogList.innerHTML = channelMarkup + visibleUsers.map((user) => {
       const avatar = getAvatarMeta(user.id || user.username, user.name || user.username || "?");
       return '<button class="dialog-item" type="button" data-search-user-id="' + escapeHtml(user.id) + '">' +
         '<div class="dialog-avatar user-avatar" style="' + avatar.style + '"><img class="generated-avatar-photo" src="' + avatar.avatarUrl + '" alt="' + avatar.letter + '" /></div>' +
@@ -984,11 +1387,14 @@ document.addEventListener("DOMContentLoaded", () => {
     dialogList.querySelectorAll("[data-search-user-id]").forEach((button) => {
       button.addEventListener("click", async () => {
         const targetUserId = button.getAttribute("data-search-user-id");
-        if (!targetUserId) {
-          return;
-        }
+        if (!targetUserId) return;
 
-        if (targetUserId === getWin().currentUserId && savedDialog?.publicId) {
+        const currentUserId = getWin().currentUserId;
+        const allDialogs = getWin().allDialogs || [];
+        const isSelf = targetUserId === currentUserId;
+
+        const savedDialog = allDialogs.find((d: any) => isSelf ? d.type === "saved" : (d.type === "direct" && d.peerUserId === targetUserId));
+        if (savedDialog) {
           currentSearchQuery = "";
           currentSearchResults = [];
           if (sidebarSearch) sidebarSearch.value = "";
@@ -1023,6 +1429,33 @@ document.addEventListener("DOMContentLoaded", () => {
         }
       });
     });
+
+    dialogList.querySelectorAll("[data-search-channel-id]").forEach((button) => {
+      button.addEventListener("click", async () => {
+        const channelPublicId = button.getAttribute("data-search-channel-id");
+        const channel = visibleChannels.find((item) => item.publicId === channelPublicId);
+        if (!channel?.channelSlug) {
+          return;
+        }
+
+        try {
+          currentSearchQuery = "";
+          currentSearchResults = [];
+          currentSearchChannels = [];
+          if (sidebarSearch) sidebarSearch.value = "";
+          const nextPath = "/c/" + encodeURIComponent(channel.channelSlug);
+          if (window.location.pathname !== nextPath) {
+            window.history.pushState({}, "", nextPath);
+          }
+          const loadWorkspace = getWin().loadWorkspace;
+          if (typeof loadWorkspace === "function") {
+            await loadWorkspace({ forceNew: true, animate: true });
+          }
+        } catch (error: any) {
+          showToast(error instanceof Error ? error.message : "Failed to open channel.", "error");
+        }
+      });
+    });
     animateDialogListItems();
   };
 
@@ -1034,39 +1467,82 @@ document.addEventListener("DOMContentLoaded", () => {
     dialogList.classList.remove("search-loading");
     dialogList.classList.remove("search-empty");
 
-    dialogList.innerHTML = visibleDialogs.map((dialog) => {
-      const active = dialog.id === getWin().currentDialogId ? " active" : "";
+    const renderPreviewFn = (getWin() as any).renderDialogPreviewHtml || ((d: any) => escapeHtml(d?.lastMessagePreview || ""));
+    const getIconFn = (getWin() as any).getIcon || (typeof getIcon === "function" ? getIcon : null);
+    const typeIcon = (type: string) => {
+      if (!getIconFn) return "";
+      if (type === "channel") return '<span class="dialog-type-icon">' + getIconFn("campaign", "", 'aria-hidden="true"') + "</span>";
+      if (type === "group") return '<span class="dialog-type-icon">' + getIconFn("groups", "", 'aria-hidden="true"') + "</span>";
+      if (type === "secret") return '<span class="dialog-type-icon">' + getIconFn("lock", "", 'aria-hidden="true"') + "</span>";
+      if (type === "bot") return '<span class="dialog-type-icon">' + getIconFn("bot", "", 'aria-hidden="true"') + "</span>";
+      return "";
+    };
+    const archivedDialogs = (dialogs || []).filter((dialog) => isDialogArchived(String(dialog?.publicId || "")));
+    const archivePreview = archivedDialogs.slice(0, 3).map((dialog) => String(dialog.title || "").trim()).filter(Boolean).join(", ");
+    const archiveRow = (!archiveViewOpen && archivedDialogs.length)
+      ? '<button class="dialog-item dialog-archive-item" type="button" data-action="open-archive">' +
+          '<div class="dialog-avatar dialog-archive-avatar">' + (getIconFn ? getIconFn("archive", "", 'aria-hidden="true"') : "") + "</div>" +
+          '<div class="dialog-body">' +
+            '<div class="dialog-line"><span class="dialog-title-wrap"><strong>' + escapeHtml(t("sidebar.archive")) + "</strong></span></div>" +
+            '<div class="dialog-preview-row"><div class="dialog-preview-copy"><span class="dialog-archive-preview">' + escapeHtml(archivePreview) + "</span></div></div>" +
+          "</div>" +
+        "</button>"
+      : (archiveViewOpen
+        ? '<button class="dialog-item dialog-archive-item is-open" type="button" data-action="open-archive">' +
+            '<div class="dialog-avatar dialog-archive-avatar">' + (getIconFn ? getIconFn("arrow_back", "", 'aria-hidden="true"') : "") + "</div>" +
+            '<div class="dialog-body"><div class="dialog-line"><span class="dialog-title-wrap"><strong>' + escapeHtml(t("sidebar.archive")) + "</strong></span></div></div>" +
+          "</button>"
+        : "");
+
+    dialogList.innerHTML = "";
+    const dialogFragment = document.createDocumentFragment();
+    if (archiveRow) {
+      const archiveHost = document.createElement("div");
+      archiveHost.innerHTML = archiveRow;
+      Array.from(archiveHost.children).forEach((node) => dialogFragment.appendChild(node));
+    }
+
+    visibleDialogs.forEach((dialog) => {
+      const isBot = dialog.type === "bot";
       const unreadCount = Math.max(0, Number(dialog?.unreadCount) || 0);
-      const unreadBadgeClassName = unreadCount > 0
-        ? "dialog-unread-badge"
-        : "dialog-unread-badge is-hidden";
-      const unreadBadgeText = unreadCount > 99 ? "99+" : String(unreadCount || "");
+      const muted = Boolean(dialog.muted) || (typeof getWin().isDialogNotificationsEnabled === "function" && getWin().isDialogNotificationsEnabled(dialog.publicId) === false);
+      const verified = dialog.verified || dialog.isVerified
+        ? '<span class="dialog-verified">' + (getIconFn ? getIconFn("verified", "", 'aria-hidden="true"') : "") + "</span>"
+        : "";
+      const node = mountLegacyDialogItemDom({
+        dialogId: String(dialog.id || ""),
+        publicId: String(dialog.publicId || ""),
+        dialogType: String(dialog.type || ""),
+        unreadCount,
+        muted,
+        isActive: dialog.id === getWin().currentDialogId,
+        avatarHtml: resolveDialogAvatarMarkup(dialog),
+        typeIconHtml: typeIcon(dialog.type),
+        title: String(dialog.title || ""),
+        verifiedHtml: verified,
+        metaTime: formatDialogListTime(dialog.lastMessageCreatedAt),
+        previewHtml: renderPreviewFn(dialog),
+        openButtonLabel: t("sidebar.open"),
+        showOpenButton: isBot,
+        onOpen: () => {
+          const dialogId = String(dialog.id || "");
+          const publicId = String(dialog.publicId || "");
+          if (!dialogId || !publicId) {
+            return;
+          }
 
-      return '<button class="dialog-item saved-item' + active + '" data-dialog-id="' + escapeHtml(dialog.id) + '" data-public-id="' + escapeHtml(dialog.publicId) + '">' +
-        getDialogAvatarMarkup(dialog) +
-        '<div class="dialog-body">' +
-          '<div class="dialog-line"><span class="dialog-title-wrap"><strong>' + escapeHtml(dialog.title) + '</strong>' + (dialog.muted ? getIcon("volume_off", "", 'style="font-size: 14px; margin-left: 4px; vertical-align: middle; opacity: 0.6;"') : '') + '</span><span class="dialog-meta">' + escapeHtml(formatDialogListTime(dialog.lastMessageCreatedAt)) + '</span></div>' +
-          '<div class="dialog-preview dialog-preview-row">' +
-            '<span class="dialog-preview-copy">' + renderDialogPreviewHtml(dialog) + '</span>' +
-            '<span class="' + unreadBadgeClassName + '" aria-hidden="' + (unreadCount > 0 ? "false" : "true") + '">' + escapeHtml(unreadBadgeText) + '</span>' +
-          '</div>' +
-        '</div>' +
-      '</button>';
-    }).join("");
-
-    dialogList.querySelectorAll("[data-dialog-id]").forEach((button) => {
-      button.addEventListener("click", () => {
-        const dialogId = button.getAttribute("data-dialog-id");
-        const publicId = button.getAttribute("data-public-id");
-        if (dialogId && publicId) {
-          const badgeEl = button.querySelector(".dialog-unread-badge");
+          getWin().__THEGRAPHT_STORE_ACTIONS__?.dialogActions?.clearUnread?.(publicId);
+          const button = dialogList?.querySelector('.dialog-item[data-public-id="' + CSS.escape(publicId) + '"]');
+          const badgeEl = button?.querySelector(".dialog-unread-badge");
           if (badgeEl && !badgeEl.classList.contains("is-hidden")) {
             badgeEl.classList.add("is-hidden");
           }
-
-          getWin().allDialogs = getWin().allDialogs.map((d: any) => d.publicId === publicId
-            ? { ...d, unreadCount: 0 }
-            : d);
+          if (button instanceof HTMLElement) {
+            button.dataset.dialogUnread = "0";
+          }
+          getWin().allDialogs = getWin().allDialogs.map((entry: any) => entry.publicId === publicId
+            ? { ...entry, unreadCount: 0 }
+            : entry);
           if (getWin().currentDialogSnapshot?.publicId === publicId) {
             getWin().currentDialogSnapshot = {
               ...getWin().currentDialogSnapshot,
@@ -1074,14 +1550,23 @@ document.addEventListener("DOMContentLoaded", () => {
             };
           }
 
-          window.setTimeout(() => {
-            renderDialogs(getWin().allDialogs);
-          }, 220);
-
+          getWin().applyDialogFolderFilter?.();
           void loadDialog(publicId);
         }
       });
+      dialogFragment.appendChild(node);
     });
+    dialogList.appendChild(dialogFragment);
+
+    getWin().applyDialogFolderFilter?.();
+
+    dialogList.querySelectorAll("[data-action='open-archive']").forEach((button) => {
+      button.addEventListener("click", () => {
+        archiveViewOpen = !archiveViewOpen;
+        renderDialogs(getWin().allDialogs || []);
+      });
+    });
+
     if (shouldAnimate) {
       animateDialogListItems();
     }
@@ -1114,33 +1599,45 @@ document.addEventListener("DOMContentLoaded", () => {
     }
 
     dialogContextMenuState = context;
-    dialogContextMenuBody.innerHTML =
-      '<button class="dialog-context-menu-item" type="button" data-action="open_in_new">' +
-        getIcon("open_in_new", "", 'aria-hidden="true"') +
-        '<span>Open chat in new window</span>' +
-      '</button>';
+    const archived = isDialogArchived(String(context.publicId || ""));
+
+    renderLegacyDialogContextMenuBody(
+      dialogContextMenuBody,
+      getLegacyDialogContextMenuActions(archived),
+      (action) => {
+        const publicId = String(dialogContextMenuState?.publicId || "");
+        if (!publicId) {
+          return;
+        }
+        if (action === "archive") {
+          const next = getArchivedDialogIds();
+          if (archived) {
+            setArchivedDialogIds(next.filter((id) => id !== publicId));
+          } else {
+            setArchivedDialogIds(next.concat(publicId));
+          }
+          renderDialogs(getWin().allDialogs || []);
+          closeDialogContextMenu();
+          return;
+        }
+        if (action !== "open_in_new") {
+          return;
+        }
+
+        const targetPath = resolveRoutePathForDialogPublicId(publicId);
+        window.open(targetPath, "_blank", "noopener,noreferrer");
+        closeDialogContextMenuSoon();
+      }
+    );
 
     const menuWidth = 268;
-    const menuHeight = 72;
+    const menuHeight = 120;
     const left = Math.min(window.innerWidth - menuWidth - 12, Math.max(12, event.clientX));
     const top = Math.min(window.innerHeight - menuHeight - 12, Math.max(12, event.clientY));
     dialogContextMenu.style.left = left + "px";
     dialogContextMenu.style.top = top + "px";
     dialogContextMenu.classList.add("open");
     dialogContextMenu.setAttribute("aria-hidden", "false");
-
-    dialogContextMenuBody.querySelectorAll("[data-action]").forEach((button) => {
-      button.addEventListener("click", () => {
-        const action = button.getAttribute("data-action");
-        if (action !== "open_in_new" || !dialogContextMenuState?.publicId) {
-          return;
-        }
-
-        const targetPath = resolveRoutePathForDialogPublicId(dialogContextMenuState.publicId);
-        window.open(targetPath, "_blank", "noopener,noreferrer");
-        closeDialogContextMenuSoon();
-      });
-    });
   };
 
   const closeDialog = (options: any = {}) => {
@@ -1172,6 +1669,18 @@ document.addEventListener("DOMContentLoaded", () => {
   };
 
   const closeDialogWithMotion = (options: any = {}) => {
+    if (isMobileViewport()) {
+      if (pageRoot?.classList.contains("mobile-chat-closing")) {
+        return;
+      }
+      pageRoot?.classList.add("mobile-chat-closing");
+      syncMobileChatOpenState(false);
+      window.setTimeout(() => {
+        closeDialog(options);
+        pageRoot?.classList.remove("mobile-chat-closing");
+      }, 200);
+      return;
+    }
     if (!(chatWindow instanceof HTMLElement)) {
       closeDialog(options);
       return;
@@ -1194,6 +1703,32 @@ document.addEventListener("DOMContentLoaded", () => {
     pageRoot?.classList.toggle("mobile-chat-open", Boolean(hasOpenDialog));
   };
 
+  const dismissUnreadDivider = (publicId = getWin().currentDialogPublicId) => {
+    if (publicId) {
+      dismissedUnreadDividerDialogIds.add(String(publicId));
+    }
+    if (getWin().currentDialogSnapshot?.publicId && (!publicId || getWin().currentDialogSnapshot.publicId === publicId)) {
+      getWin().currentDialogSnapshot = {
+        ...getWin().currentDialogSnapshot,
+        unreadCount: 0
+      };
+    }
+    const unreadDivider = messageList?.querySelector(".message-unread-divider") as HTMLElement | null;
+    if (!unreadDivider || unreadDivider.dataset.dismissing) {
+      return;
+    }
+    unreadDivider.dataset.dismissing = "true";
+    unreadDivider.style.opacity = "0";
+    unreadDivider.style.height = "0";
+    unreadDivider.style.margin = "0";
+    unreadDivider.style.padding = "0";
+    unreadDivider.style.border = "none";
+    window.setTimeout(() => {
+      unreadDivider.remove();
+    }, 300);
+  };
+  getWin().dismissUnreadDivider = dismissUnreadDivider;
+
   const renderMessages = (dialog: any, messages: any[], options: any = {}) => {
     uiRenderDebug("renderMessages:called", {
       dialogPublicId: dialog?.publicId || null,
@@ -1201,7 +1736,7 @@ document.addEventListener("DOMContentLoaded", () => {
       messageCount: Array.isArray(messages) ? messages.length : 0,
       options
     });
-    const shouldAnimateList = Boolean(options.animateList);
+    const shouldAnimateList = Boolean(options.animateList) && !isMobileViewport();
     const startMessagesLoading = () => {
       messageList?.classList.add("loading-messages");
     };
@@ -1212,13 +1747,18 @@ document.addEventListener("DOMContentLoaded", () => {
     };
     getWin().currentDialogSnapshot = dialog;
     syncDesktopTitlebar(dialog);
-    getWin().currentMessagesSnapshot = Array.isArray(messages)
+      getWin().currentMessagesSnapshot = Array.isArray(messages)
       ? dedupeMessagesById(messages).map((message) => (
           message && typeof message === "object" && message.animateOnRender
             ? { ...message, animateOnRender: false }
             : message
         ))
       : [];
+    getWin().syncStoreFromLegacy?.({
+      currentDialog: dialog,
+      messages: getWin().currentMessagesSnapshot,
+      peerReadAt: getWin().currentPeerReadAt || null
+    });
     if (dialog && dialog.type !== "group") {
       groupCallJoinStrip?.classList.remove("visible");
       groupCallJoinStrip?.setAttribute("aria-hidden", "true");
@@ -1258,9 +1798,9 @@ document.addEventListener("DOMContentLoaded", () => {
       clearPendingImageAttachment();
       const syncComposerState = getWin().syncComposerState;
       if (typeof syncComposerState === "function") syncComposerState();
-      messageList?.classList.remove("saved-empty");
-      if (messageList) {
-        messageList.innerHTML = '<div class="empty-chat-state"><p>Choose a chat to start messaging.</p><p>When you pick a dialog on the left, your conversation appears here.</p></div>';
+      messageList?.classList.remove("saved-empty", "direct-empty");
+      if (messageList && !isMobileViewport()) {
+        messageList.innerHTML = '<div class="empty-chat-state"><p data-i18n="empty.chooseChatTitle">' + escapeHtml(t("empty.chooseChatTitle")) + '</p><p data-i18n="empty.chooseChatBody">' + escapeHtml(t("empty.chooseChatBody")) + '</p></div>';
       }
       chatScrollBottom?.classList.remove("visible");
       getWin().isNearChatBottom = true;
@@ -1293,7 +1833,9 @@ document.addEventListener("DOMContentLoaded", () => {
     setSidebarComposeOpen(false);
     setSidebarMenuOpen(false);
     if (chatTitle) chatTitle.textContent = dialog.title;
-    if (chatSubtitle) chatSubtitle.textContent = formatDialogSubtitle(dialog);
+    if (chatSubtitle && (!getWin().connectionStatusManager?.getState?.() || getWin().connectionStatusManager.getState() === "connected")) {
+      chatSubtitle.textContent = formatDialogSubtitle(dialog);
+    }
     const syncChatHeaderMetaLocal = getWin().syncChatHeaderMeta;
     if (typeof syncChatHeaderMetaLocal === "function") syncChatHeaderMetaLocal();
     const syncChatProfilePanelLocal = getWin().syncChatProfilePanel;
@@ -1309,8 +1851,9 @@ document.addEventListener("DOMContentLoaded", () => {
       startMessagesLoading();
       getWin().bottomLockToken = (getWin().bottomLockToken || 0) + 1;
       messageList.classList.remove("preparing-bottom");
+      messageList.classList.remove("direct-empty");
       messageList.classList.add("saved-empty");
-      messageList.innerHTML = '<div class="saved-empty-state"><h3>Your personal space</h3><p>Forward useful messages here.</p><p>Store photos and videos here safely.</p></div>';
+      messageList.innerHTML = '<div class="saved-empty-state"><h3>' + escapeHtml(t("empty.savedHeader")) + '</h3><p>' + escapeHtml(t("empty.savedLine1")) + '</p><p>' + escapeHtml(t("empty.savedLine2")) + '</p></div>';
       chatScrollBottom?.classList.remove("visible");
       getWin().isNearChatBottom = true;
       const closeChatSearchLocal = getWin().closeChatSearch;
@@ -1327,6 +1870,7 @@ document.addEventListener("DOMContentLoaded", () => {
       messageList.classList.remove("preparing-bottom");
       const peerName = escapeHtml(dialog.title || "this user");
       messageList.classList.remove("saved-empty");
+      messageList.classList.add("direct-empty");
       messageList.innerHTML = '<div class="direct-empty-state"><div class="direct-empty-card"><h3>Start chatting with ' + peerName + '</h3><p>Once you send the first message, your chat history appears here.</p></div></div>';
       chatScrollBottom?.classList.remove("visible");
       getWin().isNearChatBottom = true;
@@ -1347,6 +1891,7 @@ document.addEventListener("DOMContentLoaded", () => {
       messageList.classList.remove("preparing-bottom");
       const groupName = escapeHtml(dialog.title || "Group");
       messageList.classList.remove("saved-empty");
+      messageList.classList.add("direct-empty");
       messageList.innerHTML = '<div class="direct-empty-state"><div class="direct-empty-card"><h3>Group "' + groupName + '"</h3><p>Groups can have:</p><p>✓ Up to 20,000 members</p><p>✓ Persistent chat history</p><p>✓ Public links such as thegrapht.su/g/' + escapeHtml(dialog.publicId) + '</p><p>✓ Admins with different rights</p></div></div>';
       chatScrollBottom?.classList.remove("visible");
       getWin().isNearChatBottom = true;
@@ -1356,7 +1901,7 @@ document.addEventListener("DOMContentLoaded", () => {
       return;
     }
 
-    messageList.classList.remove("saved-empty");
+    messageList.classList.remove("saved-empty", "direct-empty");
     getWin().suppressBottomLockCancel = true;
     const hasRestoreScrollTop = typeof options.restoreScrollTop === "number";
     const shouldPrepareBottom = (options.scrollBehavior !== "none" || options.forceScrollBottom) && !hasRestoreScrollTop;
@@ -1392,9 +1937,12 @@ document.addEventListener("DOMContentLoaded", () => {
     }
     startMessagesLoading();
     const renderableItems = buildRenderableMessageItems(mergedMessages);
-    const normalizedItems = typeof annotateGroupIncomingSequences === "function"
-      ? annotateGroupIncomingSequences(renderableItems)
-      : renderableItems;
+    const annotateFn = (typeof getWin().annotateMessageSequences === "function"
+      ? getWin().annotateMessageSequences
+      : (typeof getWin().annotateGroupIncomingSequences === "function"
+        ? getWin().annotateGroupIncomingSequences
+        : null));
+    const normalizedItems = annotateFn ? annotateFn(renderableItems) : renderableItems;
     uiRenderDebug("renderMessages:normalized_items", {
       dialogType: dialog?.type || null,
       totalItems: Array.isArray(normalizedItems) ? normalizedItems.length : 0,
@@ -1403,8 +1951,15 @@ document.addEventListener("DOMContentLoaded", () => {
         : 0
     });
 
+    const isChannelGuest = dialog.type === "channel" && dialog.channelIsMember !== true;
+    const unreadAlreadyDismissed = Boolean(dialog.publicId && dismissedUnreadDividerDialogIds.has(dialog.publicId));
     let firstUnreadMessageId = null;
-    if (dialog.unreadCount > 0 && mergedMessages.length >= dialog.unreadCount) {
+    if (
+      !isChannelGuest
+      && !unreadAlreadyDismissed
+      && dialog.unreadCount > 0
+      && mergedMessages.length >= dialog.unreadCount
+    ) {
       // Inline sort messages chronologically
       const sorted = mergedMessages.slice().sort((a, b) => {
         const aTs = new Date(a?.createdAt || 0).getTime();
@@ -1418,35 +1973,64 @@ document.addEventListener("DOMContentLoaded", () => {
     }
 
     let renderedUnreadDivider = false;
-    messageList.innerHTML = normalizedItems.map((item) => {
-      let prefix = "";
+    messageList.innerHTML = "";
+    const messageFragment = document.createDocumentFragment();
+    const renderRenderableItemDom = getWin().renderRenderableItemDom;
+    normalizedItems.forEach((item) => {
       if (firstUnreadMessageId && !renderedUnreadDivider && item.messages) {
         const hasFirstUnread = item.messages.some((m: any) => m && m.id === firstUnreadMessageId);
         if (hasFirstUnread) {
           renderedUnreadDivider = true;
-          prefix = '<div class="message-unread-divider"><span>Unread Messages</span></div>';
+          const unreadDivider = document.createElement("div");
+          unreadDivider.className = "message-unread-divider";
+          unreadDivider.innerHTML = "<span>" + escapeHtml(t("chat.unreadMessages")) + "</span>";
+          messageFragment.appendChild(unreadDivider);
         }
       }
+
+      const node = typeof renderRenderableItemDom === "function"
+        ? renderRenderableItemDom(item)
+        : null;
+      if (node instanceof HTMLElement) {
+        messageFragment.appendChild(node);
+        return;
+      }
+
       const html = item.kind === "day"
         ? renderDaySeparator(item.dayValue)
         : item.kind === "album"
-          ? renderAlbumMessage(item.messages, { groupIncomingMeta: item.groupIncomingMeta })
-          : renderSingleMessage(item.messages[0], { groupIncomingMeta: item.groupIncomingMeta });
-      return prefix + html;
-    }).join("");
+          ? renderAlbumMessage(item.messages, { groupIncomingMeta: item.groupIncomingMeta, outgoingSeqMeta: item.outgoingSeqMeta })
+          : renderSingleMessage(item.messages[0], { groupIncomingMeta: item.groupIncomingMeta, outgoingSeqMeta: item.outgoingSeqMeta });
+      if (!html) {
+        return;
+      }
+      const tempContainer = document.createElement("div");
+      tempContainer.innerHTML = html;
+      Array.from(tempContainer.children).forEach((fallbackNode) => {
+        messageFragment.appendChild(fallbackNode);
+      });
+    });
+    messageList.appendChild(messageFragment);
 
-    if (typeof normalizeMessageDaySeparators === "function") {
-      normalizeMessageDaySeparators();
+    if (typeof getWin().normalizeMessageDaySeparators === "function") {
+      getWin().normalizeMessageDaySeparators();
     }
-    hydrateMessageImages({ lockToken: renderLockToken });
+    if (typeof getWin().hydrateMessageImages === "function") {
+      getWin().hydrateMessageImages({ lockToken: renderLockToken });
+    }
     if (chatSearchPanel?.classList.contains("open")) {
       const renderChatSearchResultsLocal = getWin().renderChatSearchResults;
       if (typeof renderChatSearchResultsLocal === "function") renderChatSearchResultsLocal();
     }
     if (typeof syncActiveCallChipLocal === "function") syncActiveCallChipLocal();
-    prefetchDialogMedia(mergedMessages);
+    if (typeof getWin().prefetchDialogMedia === "function") {
+      getWin().prefetchDialogMedia(mergedMessages);
+    }
     if (shouldPrepareBottom) {
+      getWin().bottomLockCanceledByUser = false;
+      messageList.scrollTop = messageList.scrollHeight;
       hardPinMessagesToBottom(renderLockToken);
+      dismissUnreadDivider(dialog.publicId);
     }
     requestAnimationFrame(() => {
       if (shouldPrepareBottom) {
@@ -1512,9 +2096,7 @@ document.addEventListener("DOMContentLoaded", () => {
     const loadToken = getWin().activeDialogLoadToken;
     const cachedPayload = options.skipCache ? null : getDialogPayloadCache(publicId);
     
-    const shouldRestoreScrollTop = Boolean(options.restoreScrollOnOpen)
-      || visitedDialogsInSession.has(publicId)
-      || dialogScrollTopCache.has(publicId);
+    const shouldRestoreScrollTop = Boolean(options.restoreScrollOnOpen);
     const restoredScrollTop = shouldRestoreScrollTop ? getDialogScrollTop(publicId) : 0;
     const hasRestoredScrollTop = shouldRestoreScrollTop
       && Number.isFinite(restoredScrollTop)
@@ -1529,50 +2111,17 @@ document.addEventListener("DOMContentLoaded", () => {
     }
 
     if (cachedPayload?.dialog && !options.forceReload) {
-      uiRenderDebug("loadDialog:cached", {
-        publicId,
-        messageCount: Array.isArray(cachedPayload.messages) ? cachedPayload.messages.length : 0
-      });
       getWin().currentDialogId = cachedPayload.dialog.id;
       getWin().currentDialogPublicId = cachedPayload.dialog.publicId;
+      getWin().currentDialogSnapshot = cachedPayload.dialog;
+      getWin().currentMessagesSnapshot = cachedPayload.messages || [];
       getWin().peerActiveInCurrentDialog = false;
       getWin().currentPeerReadAt = cachedPayload.dialog.peerReadAt || null;
-      renderMessages(cachedPayload.dialog, cachedPayload.messages, {
-        scrollBehavior: "none",
-        openingDialog: false,
-        animateList: false,
-        forceScrollBottom: !hasRestoredScrollTop,
-        restoreScrollTop: hasRestoredScrollTop ? restoredScrollTop : null
-      });
-      visitedDialogsInSession.add(cachedPayload.dialog.publicId);
-      warmupDialogMediaInBackground(cachedPayload.messages, {
-        targetPublicId: cachedPayload.dialog.publicId,
-        targetLoadToken: loadToken
-      });
 
-      if (getWin().pendingDialogPublicIdFromNotification === cachedPayload.dialog.publicId) {
-        getWin().pendingDialogPublicIdFromNotification = "";
+      if (chatTitle) chatTitle.textContent = cachedPayload.dialog.title || "";
+      if (chatSubtitle && (!getWin().connectionStatusManager?.getState?.() || getWin().connectionStatusManager.getState() === "connected")) {
+        chatSubtitle.textContent = formatDialogSubtitle(cachedPayload.dialog) || "";
       }
-
-      getWin().pendingAutoBottomDialogPublicId = "";
-      const apiBase = getWin().apiBase || "/api";
-      void fetchJson(apiBase + "/v1/dialogs/by-public-id/" + encodeURIComponent(cachedPayload.dialog.publicId) + "/read", {
-        method: "POST"
-      }).catch(() => {});
-      sendCurrentPresence();
-      return;
-    }
-
-    const allDialogs = getWin().allDialogs || [];
-    const previewDialog = allDialogs.find((d: any) => d.publicId === publicId);
-    if (previewDialog) {
-      getWin().currentDialogId = previewDialog.id;
-      getWin().currentDialogPublicId = previewDialog.publicId;
-      getWin().currentDialogSnapshot = previewDialog;
-      getWin().currentMessagesSnapshot = [];
-      
-      if (chatTitle) chatTitle.textContent = previewDialog.title;
-      if (chatSubtitle) chatSubtitle.textContent = formatDialogSubtitle(previewDialog) || "";
       const syncChatHeaderMeta = getWin().syncChatHeaderMeta;
       if (typeof syncChatHeaderMeta === "function") syncChatHeaderMeta();
       const syncChatProfilePanel = getWin().syncChatProfilePanel;
@@ -1583,57 +2132,94 @@ document.addEventListener("DOMContentLoaded", () => {
       chatStage?.classList.remove("empty");
       chatStage?.classList.add("open-chat");
       if (chatComposer) chatComposer.style.display = "flex";
-      
+
       syncMobileChatOpenState(true);
       setSidebarComposeOpen(false);
       setSidebarMenuOpen(false);
       const syncComposerState = getWin().syncComposerState;
       if (typeof syncComposerState === "function") syncComposerState();
+
+      renderMessages(cachedPayload.dialog, cachedPayload.messages, {
+        scrollBehavior: "auto",
+        openingDialog: true,
+        animateList: false,
+        forceScrollBottom: true,
+        restoreScrollTop: null
+      });
+
+      visitedDialogsInSession.add(cachedPayload.dialog.publicId);
+      warmupDialogMediaInBackground(cachedPayload.messages, {
+        targetPublicId: cachedPayload.dialog.publicId,
+        targetLoadToken: loadToken
+      });
     } else {
-      getWin().currentDialogId = "";
-      getWin().currentDialogPublicId = publicId;
-      getWin().currentDialogSnapshot = null;
-      getWin().currentMessagesSnapshot = [];
-      
-      if (chatTitle) chatTitle.textContent = "Loading...";
-      if (chatSubtitle) chatSubtitle.textContent = "";
-      const syncChatHeaderMeta = getWin().syncChatHeaderMeta;
-      if (typeof syncChatHeaderMeta === "function") syncChatHeaderMeta();
-      const syncChatProfilePanel = getWin().syncChatProfilePanel;
-      if (typeof syncChatProfilePanel === "function") syncChatProfilePanel();
-      
-      workspaceMain?.classList.remove("empty-chat");
-      workspaceMain?.classList.add("open-chat");
-      chatStage?.classList.remove("empty");
-      chatStage?.classList.add("open-chat");
-      if (chatComposer) chatComposer.style.display = "none";
-      
-      syncMobileChatOpenState(true);
-      setSidebarComposeOpen(false);
-      setSidebarMenuOpen(false);
-      const syncComposerState = getWin().syncComposerState;
-      if (typeof syncComposerState === "function") syncComposerState();
+      const allDialogs = getWin().allDialogs || [];
+      const previewDialog = allDialogs.find((d: any) => d.publicId === publicId);
+      if (previewDialog) {
+        getWin().currentDialogId = previewDialog.id;
+        getWin().currentDialogPublicId = previewDialog.publicId;
+        getWin().currentDialogSnapshot = previewDialog;
+        getWin().currentMessagesSnapshot = [];
+        
+        if (chatTitle) chatTitle.textContent = previewDialog.title;
+        if (chatSubtitle && (!getWin().connectionStatusManager?.getState?.() || getWin().connectionStatusManager.getState() === "connected")) {
+          chatSubtitle.textContent = formatDialogSubtitle(previewDialog) || "";
+        }
+        const syncChatHeaderMeta = getWin().syncChatHeaderMeta;
+        if (typeof syncChatHeaderMeta === "function") syncChatHeaderMeta();
+        const syncChatProfilePanel = getWin().syncChatProfilePanel;
+        if (typeof syncChatProfilePanel === "function") syncChatProfilePanel();
+        
+        workspaceMain?.classList.remove("empty-chat");
+        workspaceMain?.classList.add("open-chat");
+        chatStage?.classList.remove("empty");
+        chatStage?.classList.add("open-chat");
+        if (chatComposer) chatComposer.style.display = "flex";
+        
+        syncMobileChatOpenState(true);
+        setSidebarComposeOpen(false);
+        setSidebarMenuOpen(false);
+        const syncComposerState = getWin().syncComposerState;
+        if (typeof syncComposerState === "function") syncComposerState();
+      } else {
+        getWin().currentDialogId = "";
+        getWin().currentDialogPublicId = publicId;
+        getWin().currentDialogSnapshot = null;
+        getWin().currentMessagesSnapshot = [];
+        
+        if (chatTitle) chatTitle.textContent = "Loading...";
+        if (chatSubtitle) chatSubtitle.textContent = "";
+        const syncChatHeaderMeta = getWin().syncChatHeaderMeta;
+        if (typeof syncChatHeaderMeta === "function") syncChatHeaderMeta();
+        const syncChatProfilePanel = getWin().syncChatProfilePanel;
+        if (typeof syncChatProfilePanel === "function") syncChatProfilePanel();
+        
+        workspaceMain?.classList.remove("empty-chat");
+        workspaceMain?.classList.add("open-chat");
+        chatStage?.classList.remove("empty");
+        chatStage?.classList.add("open-chat");
+        if (chatComposer) chatComposer.style.display = "none";
+        
+        syncMobileChatOpenState(true);
+        setSidebarComposeOpen(false);
+        setSidebarMenuOpen(false);
+        const syncComposerState = getWin().syncComposerState;
+        if (typeof syncComposerState === "function") syncComposerState();
+      }
+
+      if (messageList) {
+        messageList.innerHTML = '<div class="chat-spinner-container">' + googleSpinnerMarkup(40) + '</div>';
+      }
     }
 
     getWin().pendingAutoBottomDialogPublicId = publicId;
     getWin().pendingAutoBottomCanceled = false;
-    getWin().forceBottomOnNextDialogRender = !hasRestoredScrollTop && options.scrollBehavior !== "none";
+    getWin().forceBottomOnNextDialogRender = true;
 
     try {
       const preserveActiveAudioForLayoutChange = getWin().preserveActiveAudioForLayoutChange;
       if (typeof preserveActiveAudioForLayoutChange === "function") {
         preserveActiveAudioForLayoutChange();
-      }
-      if (messageList) {
-        messageList.innerHTML = '\
-          <div class="chat-spinner-container">\
-            <div class="boot-splash-inner">\
-              <svg class="boot-splash-circular" viewBox="22 22 44 44" aria-hidden="true" focusable="false">\
-                <circle class="boot-splash-circular-indicator" cx="44" cy="44" r="20.2"></circle>\
-              </svg>\
-            </div>\
-          </div>\
-        ';
       }
       
       const apiBase = getWin().apiBase || "/api";
@@ -1647,6 +2233,9 @@ document.addEventListener("DOMContentLoaded", () => {
       setDialogPayloadCache(publicId, preparedPayload);
       getWin().currentDialogId = preparedPayload.dialog.id;
       getWin().currentDialogPublicId = preparedPayload.dialog.publicId;
+      getWin().currentDialogSnapshot = preparedPayload.dialog;
+      getWin().currentMessagesSnapshot = preparedPayload.messages || [];
+      if (chatComposer) chatComposer.style.display = "flex";
       if (getWin().pendingDialogPublicIdFromNotification === preparedPayload.dialog.publicId) {
         getWin().pendingDialogPublicIdFromNotification = "";
       }
@@ -1682,11 +2271,11 @@ document.addEventListener("DOMContentLoaded", () => {
           options
         });
         renderMessages(preparedPayload.dialog, preparedPayload.messages, {
-          scrollBehavior: hasRestoredScrollTop ? "none" : (options.scrollBehavior || "auto"),
+          scrollBehavior: "auto",
           openingDialog: true,
           animateList: false,
-          forceScrollBottom: !hasRestoredScrollTop,
-          restoreScrollTop: hasRestoredScrollTop ? restoredScrollTop : null
+          forceScrollBottom: true,
+          restoreScrollTop: null
         });
         visitedDialogsInSession.add(preparedPayload.dialog.publicId);
         warmupDialogMediaInBackground(preparedPayload.messages, {
@@ -1707,17 +2296,39 @@ document.addEventListener("DOMContentLoaded", () => {
         });
       }
       getWin().pendingAutoBottomDialogPublicId = "";
-      if (preparedPayload.dialog?.publicId) {
+      if (
+        preparedPayload.dialog?.publicId
+        && (preparedPayload.dialog?.type !== "channel" || preparedPayload.dialog?.channelIsMember === true)
+      ) {
         void fetchJson(apiBase + "/v1/dialogs/by-public-id/" + encodeURIComponent(preparedPayload.dialog.publicId) + "/read", {
           method: "POST"
         }).catch(() => {});
+        const publicId = preparedPayload.dialog.publicId;
+        getWin().allDialogs = (getWin().allDialogs || []).map((dialog: any) => dialog.publicId === publicId
+          ? { ...dialog, unreadCount: 0 }
+          : dialog);
+        if (getWin().currentDialogSnapshot?.publicId === publicId) {
+          getWin().currentDialogSnapshot = {
+            ...getWin().currentDialogSnapshot,
+            unreadCount: 0
+          };
+        }
+        const badgeEl = document.querySelector('.dialog-item[data-public-id="' + CSS.escape(publicId) + '"] .dialog-unread-badge');
+        if (badgeEl) {
+          badgeEl.classList.add("is-hidden");
+          badgeEl.textContent = "0";
+        }
+        const dialogButton = document.querySelector('.dialog-item[data-public-id="' + CSS.escape(publicId) + '"]') as HTMLElement | null;
+        if (dialogButton) {
+          dialogButton.dataset.dialogUnread = "0";
+        }
+        dismissUnreadDivider(publicId);
       }
       sendCurrentPresence();
     } catch (error) {
       getWin().pendingAutoBottomDialogPublicId = "";
       const finishDialogSwitchTransition = getWin().finishDialogSwitchTransition;
       if (typeof finishDialogSwitchTransition === "function") finishDialogSwitchTransition();
-      throw error;
     }
   };
 
@@ -1725,20 +2336,25 @@ document.addEventListener("DOMContentLoaded", () => {
 
   const loadWorkspace = (options: any = {}) => {
     uiRenderDebug("loadWorkspace:requested", { options, inFlight: Boolean(workspaceLoadInFlightPromise) });
-    if (workspaceLoadInFlightPromise) {
+    if (workspaceLoadInFlightPromise && !options.forceNew) {
       uiRenderDebug("loadWorkspace:joined_inflight", { options });
       return workspaceLoadInFlightPromise;
     }
 
+    const previousWorkspaceLoad = workspaceLoadInFlightPromise;
     workspaceLoadInFlightPromise = (async () => {
-      const isInitialWorkspaceBoot = pageRoot?.classList.contains("booting");
-
+      if (previousWorkspaceLoad) {
+        try {
+          await previousWorkspaceLoad;
+        } catch {}
+      }
       if (getWin().currentUserId) {
         uiRenderDebug("loadWorkspace:start_transition", { options });
         const startDialogSwitchTransition = getWin().startDialogSwitchTransition;
         if (typeof startDialogSwitchTransition === "function") startDialogSwitchTransition();
       }
 
+      const channelRoute = getChannelRouteFromPath();
       const routedToken = getWin().pendingDialogPublicIdFromNotification
         || (
           options.preserveRoute
@@ -1753,7 +2369,11 @@ document.addEventListener("DOMContentLoaded", () => {
       let routedUsernameFromRoute = "";
       const routePublicId = routeIsUsername ? "" : String(routedToken || "");
       const clientStateParams = new URLSearchParams();
-      if (routePublicId) {
+      if (channelRoute?.kind === "slug") {
+        clientStateParams.set("channelSlug", channelRoute.slug);
+      } else if (channelRoute?.kind === "invite") {
+        clientStateParams.set("channelInviteToken", channelRoute.inviteToken);
+      } else if (routePublicId) {
         clientStateParams.set("publicId", routePublicId);
       } else if (routeIsUsername) {
         const routeUsername = String(routedToken || "").replace(/^@+/, "").trim().toLowerCase();
@@ -1779,6 +2399,16 @@ document.addEventListener("DOMContentLoaded", () => {
         || payload?.user?.profilePhotoUrl
         || ""
       ).trim();
+      getWin().currentUserAvatarUpdatedAt = String(
+        payload?.user?.avatarUpdatedAt
+        || payload?.user?.avatar_updated_at
+        || payload?.user?.createdAt
+        || getWin().currentUserAvatarUpdatedAt
+        || ""
+      ).trim();
+      getWin().currentUserCreatedAt = String(payload?.user?.createdAt || "").trim();
+      getWin().currentUser = payload.user;
+      getWin().syncUserFromLegacy?.(payload.user);
       const secureFeatureState = getWin().secureFeatureState;
       if (secureFeatureState) {
         secureFeatureState.identityPromise = null;
@@ -1789,6 +2419,7 @@ document.addEventListener("DOMContentLoaded", () => {
       if (workspaceUserName) workspaceUserName.textContent = getWin().currentUserDisplayName;
       const parsedDialogs = await hydrateDialogPreviewsForSidebar(payload.dialogs || []);
       getWin().allDialogs = parsedDialogs;
+      getWin().syncStoreFromLegacy?.({ dialogs: parsedDialogs });
       if (routeIsUsername) {
         const routedUsername = String(routedToken || "").replace(/^@+/, "").trim().toLowerCase();
         routedUsernameFromRoute = routedUsername;
@@ -1857,14 +2488,35 @@ document.addEventListener("DOMContentLoaded", () => {
       if (finalSelection.dialog?.publicId) {
         setDialogPayloadCache(finalSelection.dialog.publicId, finalSelection);
       }
+      finishBoot(true);
       getWin().forceBottomOnNextDialogRender = Boolean(finalSelection.dialog?.publicId) && options.scrollBehavior !== "none";
-      renderMessages(finalSelection.dialog, finalSelection.messages, {
-        scrollBehavior: options.scrollBehavior || "auto",
-        animateList: isInitialWorkspaceBoot,
-        forceScrollBottom: Boolean(finalSelection.dialog?.publicId)
-      });
+      try {
+        renderMessages(finalSelection.dialog, finalSelection.messages, {
+          scrollBehavior: options.scrollBehavior || "auto",
+          animateList: false,
+          forceScrollBottom: Boolean(finalSelection.dialog?.publicId)
+        });
+      } catch (error) {
+        console.warn("renderMessages failed during workspace load:", error);
+      }
       if (finalSelection.dialog?.publicId) {
-        applyRoute(finalSelection.dialog.publicId);
+        if (channelRoute?.kind === "slug" && finalSelection.dialog.channelSlug) {
+          const slugPath = "/c/" + encodeURIComponent(finalSelection.dialog.channelSlug);
+          if (window.location.pathname !== slugPath) {
+            window.history.pushState({}, "", slugPath);
+          }
+        } else if (channelRoute?.kind === "invite" && finalSelection.dialog.channelInviteToken) {
+          const invitePath = "/c/+" + encodeURIComponent(finalSelection.dialog.channelInviteToken);
+          if (window.location.pathname !== invitePath) {
+            window.history.pushState({}, "", invitePath);
+          }
+        } else {
+          applyRoute(finalSelection.dialog.publicId);
+        }
+      }
+      const syncComposerState = getWin().syncComposerState;
+      if (typeof syncComposerState === "function") {
+        syncComposerState();
       }
       if (finalSelection.dialog?.publicId) {
         warmupDialogMediaInBackground(finalSelection.messages, {
@@ -1877,6 +2529,13 @@ document.addEventListener("DOMContentLoaded", () => {
         selectedMessageCount: Array.isArray(finalSelection.messages) ? finalSelection.messages.length : 0,
         options
       });
+      getWin().syncStoreFromLegacy?.({
+        user: payload.user,
+        dialogs: getWin().allDialogs,
+        currentDialog: finalSelection.dialog || null,
+        messages: getWin().currentMessagesSnapshot,
+        peerReadAt: getWin().currentPeerReadAt || null
+      });
       if (getWin().pendingDialogPublicIdFromNotification && finalSelection.dialog?.publicId === getWin().pendingDialogPublicIdFromNotification) {
         getWin().pendingDialogPublicIdFromNotification = "";
       }
@@ -1884,12 +2543,14 @@ document.addEventListener("DOMContentLoaded", () => {
       if (typeof bindNotificationPermissionPrompt === "function") bindNotificationPermissionPrompt();
       scheduleBackgroundRefresh();
       sendCurrentPresence();
-      finishBoot(true);
     })();
 
-    return workspaceLoadInFlightPromise.finally(() => {
+    const nextWorkspaceLoad = workspaceLoadInFlightPromise;
+    return nextWorkspaceLoad.finally(() => {
       uiRenderDebug("loadWorkspace:finished");
-      workspaceLoadInFlightPromise = null;
+      if (workspaceLoadInFlightPromise === nextWorkspaceLoad) {
+        workspaceLoadInFlightPromise = null;
+      }
     });
   };
 
@@ -1923,12 +2584,6 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   });
 
-  window.addEventListener("blur", () => {
-    if (typeof getWin().sendActiveState === "function") {
-      getWin().sendActiveState(false);
-    }
-  });
-
   document.addEventListener("visibilitychange", () => {
     if (typeof getWin().refreshNotificationOwnership === "function") {
       getWin().refreshNotificationOwnership();
@@ -1938,9 +2593,6 @@ document.addEventListener("DOMContentLoaded", () => {
     }
     if (typeof getWin().scheduleBackgroundRefresh === "function") {
       getWin().scheduleBackgroundRefresh();
-    }
-    if (typeof getWin().sendActiveState === "function") {
-      getWin().sendActiveState(document.visibilityState === "visible");
     }
   });
 
@@ -2203,6 +2855,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
     if (!currentSearchQuery.trim()) {
       currentSearchResults = [];
+      currentSearchChannels = [];
       const allDialogs = getWin().allDialogs || [];
       renderDialogs(allDialogs, { animate: true });
       return;
@@ -2222,13 +2875,15 @@ document.addEventListener("DOMContentLoaded", () => {
           }
 
           currentSearchResults = payload.users || [];
-          renderSearchResults(currentSearchResults);
+          currentSearchChannels = payload.channels || [];
+          renderSearchResults(currentSearchResults, currentSearchChannels);
         } catch (error: any) {
           if (requestId !== searchRequestId) {
             return;
           }
 
           currentSearchResults = [];
+          currentSearchChannels = [];
           if (dialogList) {
             dialogList.classList.remove("search-loading");
             dialogList.classList.add("search-empty");
@@ -2283,17 +2938,17 @@ document.addEventListener("DOMContentLoaded", () => {
     startComposeCloseTimeout();
   });
 
-  sidebarComposeChannel?.addEventListener("click", (event) => {
-    event.preventDefault();
+  sidebarComposeChannel?.addEventListener("click", () => {
+    openChannelCreatePanel();
   });
   
   sidebarComposeGroup?.addEventListener("click", () => {
     groupCreateMode = "group";
     if (groupCreateStepMembersTitle) {
-      groupCreateStepMembersTitle.textContent = "Add Members";
+      groupCreateStepMembersTitle.textContent = t("group.addMembers");
     }
     if (groupCreateSearchInput) {
-      groupCreateSearchInput.placeholder = "Add people...";
+      groupCreateSearchInput.placeholder = t("group.addPeople");
     }
     openGroupCreatePanel();
   });
@@ -2427,6 +3082,113 @@ document.addEventListener("DOMContentLoaded", () => {
     groupCreateNameTouched = true;
   });
 
+  channelCreateClose?.addEventListener("click", () => closeChannelCreatePanel());
+  channelCreateTypeBack?.addEventListener("click", () => setChannelCreateStep(1));
+  channelCreateNext?.addEventListener("click", () => {
+    const channelName = channelCreateNameInput ? (channelCreateNameInput.value || "").trim() : "";
+    if (!channelName) {
+      return;
+    }
+    syncChannelCreateVisibilityUi();
+    setChannelCreateStep(2);
+  });
+  channelCreateSubmit?.addEventListener("click", () => {
+    const channelName = channelCreateNameInput ? (channelCreateNameInput.value || "").trim() : "";
+    const visibility = getSelectedChannelVisibility();
+    const slugValue = channelCreateSlugInput ? (channelCreateSlugInput.value || "").trim().toLowerCase() : "";
+    if (!channelName) {
+      return;
+    }
+    if (visibility === "public" && (!slugValue || channelCreateSlugStatus !== "available")) {
+      syncChannelSlugValidationUi();
+      return;
+    }
+    (async () => {
+      try {
+        const apiBase = getWin().apiBase || "/api";
+        const payload = await fetchJson(apiBase + "/v1/dialogs/channel", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json"
+          },
+          body: JSON.stringify({
+            title: channelName,
+            description: channelCreateDescriptionInput ? (channelCreateDescriptionInput.value || "").trim() : "",
+            avatarDataUrl: channelCreatePhotoDataUrl || undefined,
+            visibility,
+            slug: visibility === "public" ? slugValue : undefined
+          })
+        });
+        const preparedPayload = await prepareDialogPayloadForDisplay(payload.dialog, payload.messages || []);
+        if (!preparedPayload.dialog?.publicId) {
+          throw new Error("Failed to create channel.");
+        }
+        setDialogPayloadCache(preparedPayload.dialog.publicId, preparedPayload);
+        const updateDialogInState = getWin().updateDialogInState;
+        const updatedDialog = typeof updateDialogInState === "function"
+          ? updateDialogInState(preparedPayload.dialog, {
+            lastMessagePreview: "You created a channel",
+            lastMessageSenderName: "You",
+            lastMessageCreatedAt: new Date().toISOString()
+          })
+          : null;
+        if (!updatedDialog) {
+          getWin().allDialogs.unshift({
+            ...preparedPayload.dialog,
+            lastMessagePreview: "You created a channel",
+            lastMessageSenderName: "You",
+            lastMessageCreatedAt: new Date().toISOString()
+          });
+        }
+        if (!currentSearchQuery.trim()) {
+          renderDialogs(getWin().allDialogs);
+        }
+        applyRoute(preparedPayload.dialog.publicId);
+        closeChannelCreatePanel();
+        await loadDialog(preparedPayload.dialog.publicId, { forceReload: true });
+      } catch (error: any) {
+        const message = error instanceof Error ? error.message : "Failed to create channel.";
+        if (message.toLowerCase().includes("link is invalid")) {
+          channelCreateSlugStatus = "invalid";
+          syncChannelSlugValidationUi();
+        }
+        showToast(message, "error");
+      }
+    })();
+  });
+  channelVisibilityInputs.forEach((input) => {
+    input.addEventListener("change", () => {
+      syncChannelCreateVisibilityUi();
+      scheduleChannelSlugCheck();
+    });
+  });
+  channelCreateSlugInput?.addEventListener("input", () => {
+    scheduleChannelSlugCheck();
+  });
+  channelCreateNameInput?.addEventListener("input", () => {
+    syncChannelCreateActions();
+  });
+  channelCreatePhotoButton?.addEventListener("click", () => {
+    channelCreatePhotoInput?.click();
+  });
+  channelCreatePhotoInput?.addEventListener("change", () => {
+    const file = channelCreatePhotoInput.files && channelCreatePhotoInput.files[0] ? channelCreatePhotoInput.files[0] : null;
+    if (!file) {
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = () => {
+      const result = typeof reader.result === "string" ? reader.result : "";
+      channelCreatePhotoDataUrl = result;
+      if (channelCreatePhotoPreview && result) {
+        channelCreatePhotoPreview.src = result;
+        channelCreatePhotoButton?.classList.add("has-photo");
+      }
+    };
+    reader.readAsDataURL(file);
+    channelCreatePhotoInput.value = "";
+  });
+
   const sidebarProfileAvatarEl = document.getElementById("sidebar-profile-avatar");
   const sidebarProfileDisplayName = document.getElementById("sidebar-profile-display-name");
   const sidebarProfileUsername = document.getElementById("sidebar-profile-username");
@@ -2464,14 +3226,16 @@ document.addEventListener("DOMContentLoaded", () => {
           const raw = displayName.trim().split(/\s+/);
           let ltr = raw.length >= 2 ? (raw[0][0] || "") + (raw[1][0] || "") : displayName.slice(0, 2);
           ltr = ltr.toUpperCase();
-          const svg = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128"><defs><linearGradient id="pg" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="' + pal[0] + '"/><stop offset="100%" stop-color="' + pal[1] + '"/></linearGradient></defs><circle cx="64" cy="64" r="64" fill="url(#pg)"/><text x="50%" y="54%" dominant-baseline="middle" text-anchor="middle" fill="#ffffff" font-family="Roboto,sans-serif" font-size="56" font-weight="700">' + escapeHtml(ltr) + '</text></svg>';
+          const svg = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128"><defs><linearGradient id="pg" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="' + pal[0] + '"/><stop offset="100%" stop-color="' + pal[1] + '"/></linearGradient></defs><circle cx="64" cy="64" r="64" fill="url(#pg)"/><text x="50%" y="54%" dominant-baseline="middle" text-anchor="middle" fill="#ffffff" font-family="Open Sans, sans-serif" font-size="56" font-weight="700">' + escapeHtml(ltr) + '</text></svg>';
           sidebarProfileAvatarEl.innerHTML = '<img class="generated-avatar-photo" src="data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg) + '" alt="' + escapeHtml(ltr) + '" />';
           sidebarProfileAvatarEl.style.cssText = "--avatar-start:" + pal[0] + ";--avatar-end:" + pal[1] + ";";
         }
       }
     }
+    void fetchAndUpdateSessionsCount();
     gsapOpenSidebar(sidebarProfilePanel);
   };
+
 
   sidebarMenuProfile?.addEventListener("click", () => {
     setSidebarMenuOpen(false);
@@ -2494,26 +3258,445 @@ document.addEventListener("DOMContentLoaded", () => {
     });
   }
 
+  // --- ACTIVE SESSIONS LOGIC ---
+  const fetchAndUpdateSessionsCount = async () => {
+    try {
+      const fetchJsonFn = getWin().fetchJson;
+      const data = typeof fetchJsonFn === "function"
+        ? await fetchJsonFn((getWin().apiBase || "/api") + "/v1/auth/sessions")
+        : null;
+      if (data) {
+        const badge = document.getElementById("sidebar-profile-device-badge");
+        if (badge) badge.textContent = String(data.count || 1);
+        return data;
+      }
+    } catch (err) {
+      console.warn("Failed to fetch sessions count:", err);
+    }
+    return null;
+  };
+
+  (window as any).updateActiveSessionsUI = async () => {
+    const data = await fetchAndUpdateSessionsCount();
+    const activeSessionsPanel = document.getElementById("active-sessions-panel");
+    if (data && activeSessionsPanel && activeSessionsPanel.classList.contains("open")) {
+      renderActiveSessions(data);
+    }
+  };
+
+  const renderActiveSessions = (data: any) => {
+    const currentCard = document.getElementById("current-device-card");
+    const activeList = document.getElementById("active-devices-list");
+    if (!currentCard || !activeList) return;
+
+    const sessions = Array.isArray(data?.sessions) ? data.sessions : [];
+    const currentSession = sessions.find((s: any) => s.isCurrent) || sessions.find((s: any) => s.id === data?.currentSessionId) || null;
+    const otherSessions = sessions.filter((s: any) => s.id !== currentSession?.id);
+    const label = (key: string, fallback: string) => {
+      const translated = t(key);
+      return translated === key ? fallback : translated;
+    };
+    const getActivity = (session: any) => {
+      if (session?.isCurrent) return label("status.online", "online");
+      const timestamp = new Date(session?.lastSeenAt || 0).getTime();
+      if (!timestamp) return "";
+      const seconds = Math.round((timestamp - Date.now()) / 1000);
+      if (seconds > -90) return label("status.online", "online");
+      const locale = getCurrentLanguageCode() || navigator.language;
+      const formatter = new Intl.RelativeTimeFormat(locale, { numeric: "auto" });
+      if (seconds > -3600) return formatter.format(Math.round(seconds / 60), "minute");
+      if (seconds > -86400) return formatter.format(Math.round(seconds / 3600), "hour");
+      if (seconds > -604800) return formatter.format(Math.round(seconds / 86400), "day");
+      return new Intl.DateTimeFormat(locale, { dateStyle: "medium" }).format(new Date(timestamp));
+    };
+    const getLocation = (session: any) => [
+      String(session?.location || "").trim() || label("activeSessions.unknownLocation", "Unknown location"),
+      getActivity(session)
+    ].filter(Boolean).join(" • ");
+
+    const getPlatformIconSvg = (type: string) => {
+      const t = String(type || "").toLowerCase();
+      if (t.includes("android")) {
+        return '<div class="session-icon-circle android"><svg width="22" height="22" viewBox="0 0 24 24"><path d="M0 0h24v24H0z" fill="none"/><path fill="currentColor" d="M1 18q.25-2.625 1.6-4.775t3.475-3.5L4.15 6.5q-.225-.35-.112-.75t.462-.6q.35-.225.75-.125t.6.45l2 3.325q.95-.4 1.988-.6T12 8t2.163.2t1.987.6l2-3.325q.2-.35.6-.45t.75.125q.35.2.45.6t-.1.75l-1.925 3.225q2.125 1.35 3.475 3.5T23 18zm17.013-3.787q.037-.438-.238-.863t-.675-.55t-.725.1t-.375.65t.225.85t.688.563t.737-.088t.363-.663M7.1 14.95q.4-.125.675-.55t.238-.862t-.363-.663t-.737-.088t-.688.563T6 14.2t.375.65t.725.1"/></svg></div>';
+      } else if (t.includes("ios") || t.includes("iphone") || t.includes("ipad")) {
+        return '<div class="session-icon-circle apple"><svg width="22" height="22" viewBox="0 0 24 24"><path d="M0 0h24v24H0z" fill="none"/><path fill="currentColor" d="M17.05 20.28c-.98.95-2.05.8-3.08.35c-1.09-.46-2.09-.48-3.24 0c-1.44.62-2.2.44-3.06-.35C2.79 15.25 3.51 7.59 9.05 7.31c1.35.07 2.29.74 3.08.8c1.18-.24 2.31-.93 3.57-.84c1.51.12 2.65.72 3.4 1.8c-3.12 1.87-2.38 5.98.48 7.13c-.57 1.5-1.31 2.99-2.54 4.09zM12.03 7.25c-.15-2.23 1.66-4.07 3.74-4.25c.29 2.58-2.34 4.5-3.74 4.25"/></svg></div>';
+      } else if (t.includes("mac") || t.includes("apple")) {
+        return '<div class="session-icon-circle apple"><svg width="22" height="22" viewBox="0 0 24 24"><path d="M0 0h24v24H0z" fill="none"/><path fill="currentColor" d="M14 18v2l2 1v1H8l-.004-.996L10 20v-2H2.992A1 1 0 0 1 2 16.992V4.008C2 3.451 2.455 3 2.992 3h18.016c.548 0 .992.449.992 1.007v12.985c0 .557-.455 1.008-.992 1.008zM4 5v9h16V5z"/></svg></div>';
+      } else if (t.includes("linux") || t.includes("ubuntu")) {
+        return '<div class="session-icon-circle linux"><svg width="22" height="22" viewBox="0 0 24 24"><path d="M0 0h24v24H0z" fill="none"/><path fill="currentColor" d="M19.7 17.6c-.1-.2-.2-.4-.2-.6c0-.4-.2-.7-.5-1c-.1-.1-.3-.2-.4-.2c.6-1.8-.3-3.6-1.3-4.9c-.8-1.2-2-2.1-1.9-3.7c0-1.9.2-5.4-3.3-5.1c-3.6.2-2.6 3.9-2.7 5.2c0 1.1-.5 2.2-1.3 3.1c-.2.2-.4.5-.5.7c-1 1.2-1.5 2.8-1.5 4.3c-.2.2-.4.4-.5.6c-.1.1-.2.2-.2.3c-.1.1-.3.2-.5.3c-.4.1-.7.3-.9.7c-.1.3-.2.7-.1 1.1c.1.2.1.4 0 .7c-.2.4-.2.9 0 1.4c.3.4.8.5 1.5.6c.5 0 1.1.2 1.6.4c.5.3 1.1.5 1.7.5c.3 0 .7-.1 1-.2c.3-.2.5-.4.6-.7c.4 0 1-.2 1.7-.2c.6 0 1.2.2 2 .1c0 .1 0 .2.1.3c.2.5.7.9 1.3 1h.2c.8-.1 1.6-.5 2.1-1.1c.4-.4.9-.7 1.4-.9c.6-.3 1-.5 1.1-1c.1-.7-.1-1.1-.5-1.7M12.8 4.8c.6.1 1.1.6 1 1.2q0 .45-.3.9h-.1c-.2-.1-.3-.1-.4-.2c.1-.1.1-.3.2-.5c0-.4-.2-.7-.4-.7c-.3 0-.5.3-.5.7v.1c-.1-.1-.3-.1-.4-.2V6c-.1-.5.3-1.1.9-1.2m-.3 2c.1.1.3.2.4.2s.3.1.4.2c.2.1.4.2.4.5s-.3.6-.9.8c-.2.1-.3.1-.4.2c-.3.2-.6.3-1 .3c-.3 0-.6-.2-.8-.4c-.1-.1-.2-.2-.4-.3c-.1-.1-.3-.3-.4-.6c0-.1.1-.2.2-.3c.3-.2.4-.3.5-.4l.1-.1c.2-.3.6-.5 1-.5c.3.1.6.2.9.4M10.4 5c.4 0 .7.4.8 1.1v.2c-.1 0-.3.1-.4.2v-.2c0-.3-.2-.6-.4-.5c-.2 0-.3.3-.3.6c0 .2.1.3.2.4c0 0-.1.1-.2.1c-.2-.2-.4-.5-.4-.8c0-.6.3-1.1.7-1.1m-1 16.1c-.7.3-1.6.2-2.2-.2c-.6-.3-1.1-.4-1.8-.4c-.5-.1-1-.1-1.1-.3s-.1-.5.1-1q.15-.45 0-.9c-.1-.3-.1-.5 0-.8s.3-.4.6-.5s.5-.2.7-.4c.1-.1.2-.2.3-.4c.3-.4.5-.6.8-.6c.6.1 1.1 1 1.5 1.9c.2.3.4.7.7 1c.4.5.9 1.2.9 1.6c0 .5-.2.8-.5 1m4.9-2.2c0 .1 0 .1-.1.2c-1.2.9-2.8 1-4.1.3l-.6-.9c.9-.1.7-1.3-1.2-2.5c-2-1.3-.6-3.7.1-4.8c.1-.1.1 0-.3.8c-.3.6-.9 2.1-.1 3.2c0-.8.2-1.6.5-2.4c.7-1.3 1.2-2.8 1.5-4.3c.1.1.1.1.2.1c.1.1.2.2.3.2c.2.3.6.4.9.4h.1c.4 0 .8-.1 1.1-.4c.1-.1.2-.2.4-.2q.45-.15.9-.6c.4 1.3.8 2.5 1.4 3.6c.4.8.7 1.6.9 2.5c.3 0 .7.1 1 .3c.8.4 1.1.7 1 1.2H18c0-.3-.2-.6-.9-.9s-1.3-.3-1.5.4c-.1 0-.2.1-.3.1c-.8.4-.8 1.5-.9 2.6c.1.4 0 .7-.1 1.1m4.6.6c-.6.2-1.1.6-1.5 1.1c-.4.6-1.1 1-1.9.9c-.4 0-.8-.3-.9-.7c-.1-.6-.1-1.2.2-1.8c.1-.4.2-.7.3-1.1c.1-1.2.1-1.9.6-2.2c0 .5.3.8.7 1c.5 0 1-.1 1.4-.5h.2c.3 0 .5 0 .7.2s.3.5.3.7c0 .3.2.6.3.9c.5.5.5.8.5.9c-.1.2-.5.4-.9.6m-9-12c-.1 0-.1 0-.1.1c0 0 0 .1.1.1s.1.1.1.1c.3.4.8.6 1.4.7c.5-.1 1-.2 1.5-.6l.6-.3c.1 0 .1-.1.1-.1c0-.1 0-.1-.1-.1c-.2.1-.5.2-.7.3c-.4.3-.9.5-1.4.5s-.9-.3-1.2-.6c-.1 0-.2-.1-.3-.1"/></svg></div>';
+      } else if (t.includes("chrome") || t.includes("browser")) {
+        return '<div class="session-icon-circle chrome"><svg width="22" height="22" viewBox="0 0 24 24"><path d="M0 0h24v24H0z" fill="none"/><path fill="currentColor" d="M6.804 15a6 6 0 0 0 6.423 2.873l-2.346 4.063C5.885 21.379 2 17.144 2 12c0-1.395.287-2.723.803-3.93zm14.361-7A10 10 0 0 1 22 12c0 5.118-3.844 9.334-8.803 9.926l4-6.926l-.003-.001A5.97 5.97 0 0 0 18 12a5.98 5.98 0 0 0-1.53-4zM12 8a4 4 0 1 1 0 8a4 4 0 0 1 0-8m0-6a9.99 9.99 0 0 1 8.001 4H12a6 6 0 0 0-5.7 4.126L3.953 6.063A9.99 9.99 0 0 1 12 2"/></svg></div>';
+      }
+      return '<div class="session-icon-circle windows"><svg width="22" height="22" viewBox="0 0 24 24"><path d="M0 0h24v24H0z" fill="none"/><path fill="currentColor" d="M22 2L11.2 3.6v8l10.8-.1zM10.2 12.5L2 12.4v6.8l8.1 1.1zM2 4.8v6.8h8.1V3.7zm9.1 7.7v7.9L22 22v-9.4z"/></svg></div>';
+    };
+
+    currentCard.innerHTML = currentSession ? `
+      ${getPlatformIconSvg([currentSession.deviceType, currentSession.os, currentSession.browser].join(" "))}
+      <div class="session-card-info">
+        <h4 class="session-device-name">${escapeHtml(currentSession.deviceName || label("activeSessions.unknownDevice", "Unknown device"))}</h4>
+        <p class="session-app-info">${escapeHtml(currentSession.appInfo || [currentSession.browser, currentSession.os].filter(Boolean).join(" • "))}</p>
+        <p class="session-location-info">${escapeHtml(getLocation(currentSession))}</p>
+      </div>
+      <div class="session-card-actions">
+        <button class="session-rename-btn" data-session-id="${escapeHtml(currentSession.id)}" type="button">${escapeHtml(label("activeSessions.rename", "Rename"))}</button>
+      </div>
+    ` : `<p class="active-sessions-help-text">${escapeHtml(label("activeSessions.loadFailed", "Failed to load active sessions."))}</p>`;
+
+    const terminateBtn = document.getElementById("terminate-other-sessions-btn") as HTMLButtonElement | null;
+    if (terminateBtn) {
+      if (otherSessions.length === 0) {
+        terminateBtn.disabled = true;
+        terminateBtn.classList.add("disabled");
+        terminateBtn.title = label("activeSessions.noOtherSessions", "No other active sessions to terminate");
+      } else {
+        terminateBtn.disabled = false;
+        terminateBtn.classList.remove("disabled");
+        terminateBtn.title = "";
+      }
+    }
+
+    if (otherSessions.length === 0) {
+      activeList.innerHTML = `<p class="active-sessions-help-text" style="margin: 8px 4px;">${escapeHtml(label("activeSessions.noOtherDevices", "No other active devices."))}</p>`;
+    } else {
+      activeList.innerHTML = otherSessions.map((session: any) => `
+        <div class="session-card" data-session-id="${escapeHtml(session.id)}">
+          ${getPlatformIconSvg([session.deviceType, session.os, session.browser].join(" "))}
+          <div class="session-card-info">
+            <h4 class="session-device-name">${escapeHtml(session.deviceName || label("activeSessions.unknownDevice", "Unknown device"))}</h4>
+            <p class="session-app-info">${escapeHtml(session.appInfo || [session.browser, session.os].filter(Boolean).join(" • "))}</p>
+            <p class="session-location-info">${escapeHtml(getLocation(session))}</p>
+          </div>
+          <div class="session-card-actions">
+            <button class="session-close-btn terminate-single-session-btn" data-session-id="${escapeHtml(session.id)}" type="button" aria-label="Terminate session">&times;</button>
+          </div>
+        </div>
+      `).join("");
+    }
+  };
+
+  // Confirmation Modal Handler
+  let pendingTerminateAction: (() => Promise<void>) | null = null;
+  const confirmModal = document.getElementById("terminate-confirm-modal");
+  const confirmText = document.getElementById("terminate-confirm-text");
+  const confirmCancel = document.getElementById("terminate-confirm-cancel");
+  const confirmSubmit = document.getElementById("terminate-confirm-submit");
+
+  const openConfirmModal = (text: string, action: () => Promise<void>) => {
+    if (!confirmModal) return;
+    if (confirmText) confirmText.textContent = text;
+    pendingTerminateAction = action;
+    const activeCard = document.querySelector(".active-sessions-card");
+    if (activeCard) activeCard.classList.add("modal-blur-active");
+    confirmModal.classList.add("open");
+    confirmModal.setAttribute("aria-hidden", "false");
+  };
+
+  const closeConfirmModal = () => {
+    if (!confirmModal) return;
+    confirmModal.classList.remove("open");
+    confirmModal.setAttribute("aria-hidden", "true");
+    pendingTerminateAction = null;
+    const activeCard = document.querySelector(".active-sessions-card");
+    if (activeCard) activeCard.classList.remove("modal-blur-active");
+  };
+
+  confirmCancel?.addEventListener("click", closeConfirmModal);
+  confirmModal?.querySelector(".session-confirm-modal-backdrop")?.addEventListener("click", closeConfirmModal);
+  confirmSubmit?.addEventListener("click", async () => {
+    if (pendingTerminateAction) {
+      const action = pendingTerminateAction;
+      closeConfirmModal();
+      await action();
+    }
+  });
+
+  // Open Active Sessions Modal
+  const openActiveSessionsPanel = async () => {
+    const activeSessionsPanel = document.getElementById("active-sessions-panel");
+    if (!activeSessionsPanel) return;
+    gsapOpenSidebar(activeSessionsPanel);
+    const currentCard = document.getElementById("current-device-card");
+    const activeList = document.getElementById("active-devices-list");
+    if (currentCard) currentCard.innerHTML = `<p class="active-sessions-help-text">${escapeHtml(t("activeSessions.loading") === "activeSessions.loading" ? "Loading sessions…" : t("activeSessions.loading"))}</p>`;
+    if (activeList) activeList.innerHTML = "";
+    const data = await fetchAndUpdateSessionsCount();
+    if (data) {
+      renderActiveSessions(data);
+    }
+  };
+
+  // Devices menu click
+  const devicesBtn = document.getElementById("sidebar-profile-devices-btn");
+  devicesBtn?.addEventListener("click", () => {
+    openActiveSessionsPanel();
+  });
+
+  // Language Selection Modal Handler
+  let tempSelectedLang = getCurrentLanguageCode();
+  const languagePanel = document.getElementById("language-select-panel");
+  const languageBtn = document.getElementById("sidebar-profile-language-btn");
+  const languageListContainer = document.getElementById("language-list-container");
+  const languageSearchInput = document.getElementById("language-search-input") as HTMLInputElement | null;
+
+  const APPLE_FLAG_EMOJI_MAP: Record<string, string> = {
+    gb: "1f1ec-1f1e7",
+    ru: "1f1f7-1f1fa",
+    by: "1f1e7-1f1fe",
+    ad: "1f1e6-1f1e9",
+    cn: "1f1e8-1f1f3",
+    tw: "1f1f9-1f1fc",
+    hr: "1f1ed-1f1f7",
+    cz: "1f1e8-1f1ff",
+    nl: "1f1f3-1f1f1",
+    fi: "1f1eb-1f1ee",
+    fr: "1f1eb-1f1f7",
+    de: "1f1e9-1f1ea",
+    id: "1f1ee-1f1e9",
+    it: "1f1ee-1f1f9",
+    kz: "1f1f0-1f1ff",
+    kr: "1f1f0-1f1f7",
+    my: "1f1f2-1f1fe",
+    no: "1f1f3-1f1f4",
+    pl: "1f1f5-1f1f1",
+    br: "1f1e7-1f1f7",
+    ro: "1f1f7-1f1f4",
+    rs: "1f1f7-1f1f8",
+    es: "1f1ea-1f1f8",
+    tr: "1f1f9-1f1f7",
+    ua: "1f1fa-1f1e6"
+  };
+
+  const preloadLanguageFlagImages = () => {
+    Object.values(APPLE_FLAG_EMOJI_MAP).forEach((hex) => {
+      const img = new Image();
+      img.src = `/assets/emoji/apple-64/${hex}.png`;
+    });
+    const checkImg = new Image();
+    checkImg.src = "/assets/emoji/apple-64/2705.png";
+  };
+  preloadLanguageFlagImages();
+
+  const renderLanguageList = (filterText: string = "") => {
+    if (!languageListContainer) return;
+    const query = filterText.trim().toLowerCase();
+    const filtered = LANGUAGES.filter(
+      (l) => l.nativeName.toLowerCase().includes(query) || l.englishName.toLowerCase().includes(query)
+    );
+
+    if (filtered.length === 0) {
+      languageListContainer.innerHTML = `
+        <div class="language-empty-state">
+          <div class="language-empty-title" data-i18n="language.notFoundTitle">${escapeHtml(t("language.notFoundTitle"))}</div>
+          <div class="language-empty-desc" data-i18n="language.notFoundDesc">${escapeHtml(t("language.notFoundDesc"))}</div>
+        </div>
+      `;
+      return;
+    }
+
+    languageListContainer.innerHTML = filtered.map((lang) => {
+      const isSelected = lang.code === tempSelectedLang;
+      const emojiHex = APPLE_FLAG_EMOJI_MAP[lang.iso] || "1f1ec-1f1e7";
+      return `
+        <label class="language-option-item ${isSelected ? "active" : ""}" data-lang-code="${lang.code}">
+          <input type="radio" name="selected_language" value="${lang.code}" ${isSelected ? "checked" : ""} class="language-radio" />
+          <div class="language-check-box">
+            <img src="/assets/emoji/apple-64/2705.png" alt="Selected" class="language-check-emoji" />
+          </div>
+          <img src="/assets/emoji/apple-64/${emojiHex}.png" alt="${escapeHtml(lang.englishName)}" class="language-flag-img" />
+          <div class="language-option-text">
+            <div class="language-native-name">${escapeHtml(lang.nativeName)}</div>
+            <div class="language-english-name">${escapeHtml(lang.englishName)}</div>
+          </div>
+        </label>
+      `;
+    }).join("");
+
+    languageListContainer.querySelectorAll(".language-option-item").forEach((item) => {
+      item.addEventListener("click", () => {
+        const code = item.getAttribute("data-lang-code");
+        if (code && code !== tempSelectedLang) {
+          tempSelectedLang = code;
+          setLanguageCode(code);
+          renderLanguageList(languageSearchInput?.value || "");
+        }
+      });
+    });
+  };
+
+  const openLanguagePanel = () => {
+    if (!languagePanel) return;
+    tempSelectedLang = getCurrentLanguageCode();
+    if (languageSearchInput) languageSearchInput.value = "";
+    renderLanguageList();
+    gsapOpenSidebar(languagePanel);
+    window.requestAnimationFrame(() => languageSearchInput?.focus());
+  };
+
+  languageBtn?.addEventListener("click", () => {
+    openLanguagePanel();
+  });
+
+  languageSearchInput?.addEventListener("input", (e) => {
+    renderLanguageList((e.target as HTMLInputElement).value);
+  });
+
+  languageListContainer?.addEventListener("change", (event) => {
+    const input = event.target as HTMLInputElement;
+    if (input.name !== "selected_language" || !input.value || input.value === tempSelectedLang) return;
+    tempSelectedLang = input.value;
+    setLanguageCode(input.value);
+    renderLanguageList(languageSearchInput?.value || "");
+  });
+
+  const requestLanguageClose = () => {
+    if (languagePanel) gsapCloseSidebar(languagePanel);
+  };
+
+  document.getElementById("language-select-back")?.addEventListener("click", requestLanguageClose);
+  document.getElementById("language-select-close")?.addEventListener("click", requestLanguageClose);
+
+  document.addEventListener("keydown", (event) => {
+    if (event.key !== "Escape") return;
+    if (renameModal?.classList.contains("open")) return closeRenameModal();
+    if (confirmModal?.classList.contains("open")) return closeConfirmModal();
+    if (languagePanel?.classList.contains("open")) return gsapCloseSidebar(languagePanel);
+    const activeSessionsPanel = document.getElementById("active-sessions-panel");
+    if (activeSessionsPanel?.classList.contains("open")) gsapCloseSidebar(activeSessionsPanel);
+  });
+
+  // Apply initial translations on page load
+  applyTranslations();
+
+  // Back & Close buttons
+  document.getElementById("active-sessions-back")?.addEventListener("click", () => {
+    const activeSessionsPanel = document.getElementById("active-sessions-panel");
+    if (activeSessionsPanel) gsapCloseSidebar(activeSessionsPanel);
+  });
+  document.getElementById("active-sessions-close")?.addEventListener("click", () => {
+    const activeSessionsPanel = document.getElementById("active-sessions-panel");
+    if (activeSessionsPanel) gsapCloseSidebar(activeSessionsPanel);
+  });
+
+  // Terminate All Other Sessions
+  document.getElementById("terminate-other-sessions-btn")?.addEventListener("click", () => {
+    const terminateBtn = document.getElementById("terminate-other-sessions-btn") as HTMLButtonElement | null;
+    if (terminateBtn?.disabled) {
+      const showToastFn = (window as any).showToast;
+      if (typeof showToastFn === "function") {
+        showToastFn(t("activeSessions.noOtherSessions") === "activeSessions.noOtherSessions" ? "You have no other active sessions to terminate." : t("activeSessions.noOtherSessions"), "info");
+      }
+      return;
+    }
+
+    openConfirmModal(t("activeSessions.confirmAll") === "activeSessions.confirmAll" ? "Are you sure you want to terminate all other sessions?" : t("activeSessions.confirmAll"), async () => {
+      try {
+        await getWin().fetchJson((getWin().apiBase || "/api") + "/v1/auth/sessions/terminate-other", { method: "POST" });
+        const activeList = document.getElementById("active-devices-list");
+        if (activeList) {
+          const cards = activeList.querySelectorAll(".session-card");
+          cards.forEach((card) => card.classList.add("removing"));
+          setTimeout(() => void (window as any).updateActiveSessionsUI?.(), 300);
+        }
+      } catch (err) {
+        console.error("Failed to terminate other sessions:", err);
+      }
+    });
+  });
+
+  // Terminate Single Session (Delegate click)
+  document.getElementById("active-devices-list")?.addEventListener("click", (e) => {
+    const target = e.target as HTMLElement;
+    const btn = target.closest(".terminate-single-session-btn") as HTMLElement | null;
+    if (!btn) return;
+    const sessionId = btn.getAttribute("data-session-id");
+    if (!sessionId) return;
+
+    openConfirmModal(t("activeSessions.confirmOne") === "activeSessions.confirmOne" ? "Are you sure you want to terminate this session?" : t("activeSessions.confirmOne"), async () => {
+      try {
+        await getWin().fetchJson((getWin().apiBase || "/api") + `/v1/auth/sessions/${encodeURIComponent(sessionId)}`, { method: "DELETE" });
+        const card = btn.closest(".session-card");
+        if (card) {
+          card.classList.add("removing");
+          setTimeout(() => {
+            card.remove();
+            void (window as any).updateActiveSessionsUI?.();
+          }, 300);
+        }
+        fetchAndUpdateSessionsCount();
+      } catch (err) {
+        console.error("Failed to terminate session:", err);
+      }
+    });
+  });
+
+  const renameModal = document.getElementById("session-rename-modal");
+  const renameForm = document.getElementById("session-rename-form") as HTMLFormElement | null;
+  const renameInput = document.getElementById("session-rename-input") as HTMLInputElement | null;
+  let renamedSessionId = "";
+  const closeRenameModal = () => {
+    renameModal?.classList.remove("open");
+    renameModal?.setAttribute("aria-hidden", "true");
+    renamedSessionId = "";
+  };
+  document.getElementById("session-rename-cancel")?.addEventListener("click", closeRenameModal);
+  renameModal?.querySelector(".session-confirm-modal-backdrop")?.addEventListener("click", closeRenameModal);
+  document.getElementById("active-sessions-panel")?.addEventListener("click", (event) => {
+    const button = (event.target as Element).closest<HTMLElement>(".session-rename-btn");
+    if (!button?.dataset.sessionId || !renameModal || !renameInput) return;
+    renamedSessionId = button.dataset.sessionId;
+    renameInput.value = document.querySelector("#current-device-card .session-device-name")?.textContent?.trim() || "";
+    renameModal.classList.add("open");
+    renameModal.setAttribute("aria-hidden", "false");
+    window.setTimeout(() => renameInput.select(), 50);
+  });
+  renameForm?.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const deviceName = String(renameInput?.value || "").trim();
+    if (!renamedSessionId || !deviceName) return;
+    const sessionId = renamedSessionId;
+    closeRenameModal();
+    try {
+      await getWin().fetchJson((getWin().apiBase || "/api") + `/v1/auth/sessions/${encodeURIComponent(sessionId)}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ deviceName })
+      });
+      getWin().showToast?.(t("activeSessions.renamed") === "activeSessions.renamed" ? "Device renamed" : t("activeSessions.renamed"), "success");
+      await (window as any).updateActiveSessionsUI?.();
+    } catch {
+      getWin().showToast?.(t("activeSessions.renameFailed") === "activeSessions.renameFailed" ? "Failed to rename device." : t("activeSessions.renameFailed"), "error");
+    }
+  });
+
+  window.setInterval(() => {
+    if (document.visibilityState === "visible" && document.getElementById("active-sessions-panel")?.classList.contains("open")) {
+      void (window as any).updateActiveSessionsUI?.();
+    }
+  }, 10000);
+  window.addEventListener("focus", () => {
+    if (document.getElementById("active-sessions-panel")?.classList.contains("open")) void (window as any).updateActiveSessionsUI?.();
+  });
+
+
   const avatarEl = document.getElementById("sidebar-profile-avatar");
+  avatarEl?.addEventListener("contextmenu", (e) => {
+    e.preventDefault();
+  });
   avatarEl?.addEventListener("click", () => {
     const avatarImg = avatarEl.querySelector("img") as HTMLImageElement | null;
     const avatarUrl = avatarImg ? avatarImg.src : "";
-    if (avatarUrl) {
+    const realAvatarUrl = String(getWin().currentUserAvatarUrl || "").trim();
+    if (avatarUrl && !avatarUrl.startsWith("data:image/svg+xml") && realAvatarUrl && !realAvatarUrl.startsWith("data:image/svg+xml")) {
       const displayName = getWin().currentUserDisplayName || "User";
       const userId = getWin().currentUserId;
-      const formattedDate = new Date().toLocaleString("en-US", {
-        month: "long",
-        day: "numeric",
-        year: "numeric",
-        hour: "2-digit",
-        minute: "2-digit"
-      });
+      const createdAt = getWin().currentUserAvatarUpdatedAt
+        || getWin().currentUserCreatedAt;
       (window as any).openViewerModal?.({
-        src: avatarUrl,
+        src: realAvatarUrl || avatarUrl,
         senderName: displayName,
         senderId: userId,
-        createdAt: formattedDate,
-        realAvatarUrl: String(getWin().currentUserAvatarUrl || "").trim()
+        createdAt: createdAt,
+        realAvatarUrl
       });
     }
   });
@@ -2535,17 +3718,58 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   });
 
+  const compressAvatarImage = (base64Data: string, maxSize = 512, quality = 0.85): Promise<string> => {
+    return new Promise((resolve) => {
+      const img = new Image();
+      img.onload = () => {
+        let width = img.naturalWidth || img.width;
+        let height = img.naturalHeight || img.height;
+        if (width > maxSize || height > maxSize) {
+          if (width > height) {
+            height = Math.round((height * maxSize) / width);
+            width = maxSize;
+          } else {
+            width = Math.round((width * maxSize) / height);
+            height = maxSize;
+          }
+        }
+        const canvas = document.createElement("canvas");
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext("2d");
+        if (ctx) {
+          ctx.fillStyle = "#ffffff";
+          ctx.fillRect(0, 0, width, height);
+          ctx.drawImage(img, 0, 0, width, height);
+          resolve(canvas.toDataURL("image/jpeg", quality));
+        } else {
+          resolve(base64Data);
+        }
+      };
+      img.onerror = () => resolve(base64Data);
+      img.src = base64Data;
+    });
+  };
+
   const uploadUserAvatar = async (base64Data: string) => {
     const apiBase = getWin().apiBase || "/api";
     try {
+      const compressed = await compressAvatarImage(base64Data);
       const res = await fetch(apiBase + "/v1/users/avatar", {
         method: "PUT",
         headers: {
           "Content-Type": "application/json"
         },
-        body: JSON.stringify({ avatarDataUrl: base64Data })
+        body: JSON.stringify({ avatarDataUrl: compressed })
       });
-      if (!res.ok) {
+      if (res.ok) {
+        const data = await res.json();
+        if (data?.user?.avatarUpdatedAt) {
+          getWin().currentUserAvatarUpdatedAt = data.user.avatarUpdatedAt;
+        } else {
+          getWin().currentUserAvatarUpdatedAt = new Date().toISOString();
+        }
+      } else {
         const err = await res.json();
         alert(err.error || "Failed to upload avatar");
       }
@@ -2620,26 +3844,74 @@ document.addEventListener("DOMContentLoaded", () => {
   });
 
   // Sidebar resize
+  const SIDEBAR_WIDTH_STORAGE_KEY = "thegrapht_sidebar_width";
+  const DEFAULT_SIDEBAR_WIDTH = 380;
+  const COLLAPSED_SIDEBAR_WIDTH = 78;
+  const MIN_EXPANDED_SIDEBAR_WIDTH = 280;
+  const COLLAPSED_SNAP_WIDTH = 180;
+  const MIN_SIDEBAR_WIDTH = COLLAPSED_SIDEBAR_WIDTH;
+
+  const getMaxSidebarWidth = () => {
+    const viewportWidth = window.innerWidth || 0;
+    return Math.max(MIN_EXPANDED_SIDEBAR_WIDTH, Math.min(920, Math.floor(viewportWidth * 0.5)));
+  };
+
+  const clampSidebarWidth = (val: number) => {
+    return Math.max(MIN_SIDEBAR_WIDTH, Math.min(getMaxSidebarWidth(), Math.round(val)));
+  };
+
+  const snapSidebarWidth = (val: number) => {
+    const clamped = clampSidebarWidth(val);
+    if (clamped <= COLLAPSED_SNAP_WIDTH) {
+      return COLLAPSED_SIDEBAR_WIDTH;
+    }
+    return clamped;
+  };
+
+  const collapseProgress = (width: number) => {
+    if (width <= COLLAPSED_SIDEBAR_WIDTH) {
+      return 1;
+    }
+    if (width >= MIN_EXPANDED_SIDEBAR_WIDTH) {
+      return 0;
+    }
+    return (MIN_EXPANDED_SIDEBAR_WIDTH - width) / (MIN_EXPANDED_SIDEBAR_WIDTH - COLLAPSED_SIDEBAR_WIDTH);
+  };
+
+  const applySidebarWidth = (width: number, persist = false) => {
+    const nextWidth = clampSidebarWidth(width);
+    const collapse = collapseProgress(nextWidth);
+    const workspaceShell = document.querySelector(".workspace-shell") as HTMLElement;
+    workspaceShell?.style.setProperty("--sidebar-width", nextWidth + "px");
+    workspaceShell?.style.setProperty("--sidebar-collapse", String(collapse));
+    document.documentElement.style.setProperty("--sidebar-width", nextWidth + "px");
+    document.documentElement.style.setProperty("--sidebar-collapse", String(collapse));
+    workspaceSidebar?.classList.toggle("sidebar-collapsed", collapse > 0.92);
+    if (persist) {
+      try {
+        window.localStorage.setItem(SIDEBAR_WIDTH_STORAGE_KEY, String(nextWidth));
+      } catch {}
+    }
+  };
+
+  const setSidebarResizing = (isResizing: boolean) => {
+    const workspaceShell = document.querySelector(".workspace-shell") as HTMLElement;
+    workspaceShell?.classList.toggle("sidebar-resizing", isResizing);
+    document.documentElement.classList.toggle("sidebar-resizing", isResizing);
+  };
+
   const syncSidebarWidth = () => {
     let storedWidth = DEFAULT_SIDEBAR_WIDTH;
     try {
       storedWidth = Number(window.localStorage.getItem(SIDEBAR_WIDTH_STORAGE_KEY) || DEFAULT_SIDEBAR_WIDTH);
     } catch {}
-    const nextWidth = clampSidebarWidth(Number.isFinite(storedWidth) ? storedWidth : DEFAULT_SIDEBAR_WIDTH);
-    const workspaceShell = document.querySelector(".workspace-shell") as HTMLElement;
-    workspaceShell?.style.setProperty("--sidebar-width", nextWidth + "px");
-  };
-
-  const SIDEBAR_WIDTH_STORAGE_KEY = "thegrapht_sidebar_width";
-  const DEFAULT_SIDEBAR_WIDTH = 360;
-  const MIN_SIDEBAR_WIDTH = 320;
-  const clampSidebarWidth = (val: number) => {
-    const viewportWidth = window.innerWidth || 0;
-    const maxWidth = Math.max(MIN_SIDEBAR_WIDTH, Math.min(920, Math.floor(viewportWidth * 0.68)));
-    return Math.max(MIN_SIDEBAR_WIDTH, Math.min(maxWidth, Math.round(val)));
+    applySidebarWidth(snapSidebarWidth(Number.isFinite(storedWidth) ? storedWidth : DEFAULT_SIDEBAR_WIDTH), true);
   };
 
   syncSidebarWidth();
+  window.requestAnimationFrame(() => {
+    document.documentElement.classList.add("sidebar-ready");
+  });
 
   sidebarResizeHandle?.addEventListener("pointerdown", (event) => {
     event.preventDefault();
@@ -2651,21 +3923,20 @@ document.addEventListener("DOMContentLoaded", () => {
         sidebarResizeHandle.setPointerCapture(event.pointerId);
       } catch {}
     }
-    const currentWidth = workspaceSidebar ? workspaceSidebar.getBoundingClientRect().width : 360;
+    const currentWidth = workspaceSidebar ? workspaceSidebar.getBoundingClientRect().width : DEFAULT_SIDEBAR_WIDTH;
     getWin().sidebarResizeState = {
       startX: event.clientX,
       startWidth: currentWidth
     };
-    const workspaceShell = document.querySelector(".workspace-shell") as HTMLElement;
-    workspaceShell?.classList.add("sidebar-resizing");
+    setSidebarResizing(true);
   });
 
   sidebarResizeHandle?.addEventListener("dblclick", () => {
-    const workspaceShell = document.querySelector(".workspace-shell") as HTMLElement;
-    workspaceShell?.style.setProperty("--sidebar-width", DEFAULT_SIDEBAR_WIDTH + "px");
-    try {
-      window.localStorage.setItem(SIDEBAR_WIDTH_STORAGE_KEY, String(DEFAULT_SIDEBAR_WIDTH));
-    } catch {}
+    const currentWidth = workspaceSidebar ? workspaceSidebar.getBoundingClientRect().width : DEFAULT_SIDEBAR_WIDTH;
+    applySidebarWidth(
+      currentWidth <= COLLAPSED_SNAP_WIDTH ? DEFAULT_SIDEBAR_WIDTH : COLLAPSED_SIDEBAR_WIDTH,
+      true
+    );
   });
 
   window.addEventListener("pointermove", (event) => {
@@ -2674,12 +3945,7 @@ document.addEventListener("DOMContentLoaded", () => {
       return;
     }
     const nextWidth = state.startWidth + (event.clientX - state.startX);
-    const workspaceShell = document.querySelector(".workspace-shell") as HTMLElement;
-    const finalWidth = clampSidebarWidth(nextWidth);
-    workspaceShell?.style.setProperty("--sidebar-width", finalWidth + "px");
-    try {
-      window.localStorage.setItem(SIDEBAR_WIDTH_STORAGE_KEY, String(finalWidth));
-    } catch {}
+    applySidebarWidth(nextWidth, true);
   });
 
   const stopSidebarResize = (event?: PointerEvent) => {
@@ -2693,15 +3959,18 @@ document.addEventListener("DOMContentLoaded", () => {
         }
       } catch {}
     }
+    const liveWidth = workspaceSidebar ? workspaceSidebar.getBoundingClientRect().width : DEFAULT_SIDEBAR_WIDTH;
     getWin().sidebarResizeState = null;
-    const workspaceShell = document.querySelector(".workspace-shell") as HTMLElement;
-    workspaceShell?.classList.remove("sidebar-resizing");
+    setSidebarResizing(false);
+    applySidebarWidth(snapSidebarWidth(liveWidth), true);
   };
 
   window.addEventListener("pointerup", stopSidebarResize);
   window.addEventListener("pointercancel", stopSidebarResize);
   window.addEventListener("resize", () => {
+    setSidebarResizing(true);
     syncSidebarWidth();
+    window.requestAnimationFrame(() => setSidebarResizing(false));
   });
 
   composerInput?.addEventListener("input", () => {
@@ -2731,166 +4000,14 @@ document.addEventListener("DOMContentLoaded", () => {
     });
   }
 
-  const sendCurrentMessage = async () => {
-    if (getWin().textMessageSendInFlight) {
-      return;
-    }
-
-    const body = composerInput?.value.trim();
-
-    if (!body || !getWin().currentDialogPublicId) {
-      return;
-    }
-
-    const isGifUrl = (body.startsWith("http://") || body.startsWith("https://")) &&
-                     (body.split("?")[0].split("#")[0].toLowerCase().endsWith(".gif"));
-    if (isGifUrl) {
-      rememberRecentGif(body);
-    }
-
-    getWin().textMessageSendInFlight = true;
-    if (composerSend) composerSend.disabled = true;
-    const pendingReplyMessage = getWin().pendingReplyMessage;
-    const replyContext = pendingReplyMessage
-      ? {
-          id: pendingReplyMessage.id || null,
-          senderId: pendingReplyMessage.senderId || null,
-          senderName: pendingReplyMessage.senderName || null,
-          body: pendingReplyMessage.body || null,
-          type: pendingReplyMessage.type || null,
-          mediaUrl: pendingReplyMessage.mediaUrl || null
-        }
-      : null;
-    const localMessageId = "local_" + Date.now() + "_" + Math.random().toString(36).slice(2, 8);
-    const controller = new AbortController();
-    const timeoutId = window.setTimeout(() => controller.abort(), 60000);
-    getWin().localOutgoingMessages.push({
-      id: localMessageId,
-      dialogPublicId: getWin().currentDialogPublicId,
-      senderId: getWin().currentUserId,
-      senderName: getWin().currentUserDisplayName || getWin().currentUserUsername || workspaceUserName?.textContent || "You",
-      body,
-      type: "text",
-      mediaUrl: null,
-      attachmentMime: null,
-      replyToMessageId: replyContext?.id || null,
-      replyToSenderId: replyContext?.senderId || null,
-      replyToSenderName: replyContext?.senderName || null,
-      replyToBody: replyContext?.body || null,
-      replyToType: replyContext?.type || null,
-      replyToMediaUrl: replyContext?.mediaUrl || null,
-      createdAt: new Date().toISOString(),
-      localStatus: "pending",
-      animateOnRender: true
-    });
-    clearPendingReplyMessage();
-    if (composerInput) {
-      composerInput.value = "";
-      composerInput.style.height = "48px";
-      composerInput.style.overflowY = "hidden";
-    }
-    const syncComposerState = getWin().syncComposerState;
-    if (typeof syncComposerState === "function") syncComposerState();
-    composerInput?.focus({ preventScroll: true });
-    if (getWin().typingStopTimer) {
-      window.clearTimeout(getWin().typingStopTimer);
-      getWin().typingStopTimer = null;
-    }
-    sendTypingState(false);
-    const appendedLocal = appendLocalOutgoingMessageToCurrentDialog(getWin().localOutgoingMessages[getWin().localOutgoingMessages.length - 1], {
-      scrollBehavior: "smooth",
-      forceScrollBottom: true
-    });
-    if (!appendedLocal) {
-      rerenderCurrentDialog({ scrollBehavior: "smooth", animateList: false, forceScrollBottom: true });
-    }
-    playSound("send");
-
-    try {
-      const apiBase = getWin().apiBase || "/api";
-      const payload = isSecureDialog(getWin().currentDialogSnapshot)
-        ? await (async () => {
-            const encrypted = await encryptSecureMessageBody(getWin().currentDialogSnapshot, body);
-            return fetchJson(apiBase + "/v1/dialogs/by-public-id/" + encodeURIComponent(getWin().currentDialogPublicId) + "/messages", {
-              method: "POST",
-              headers: {
-                "Content-Type": "application/json"
-              },
-              body: JSON.stringify({
-                ciphertext: encrypted.ciphertext,
-                nonce: encrypted.nonce,
-                senderKeyId: encrypted.senderKeyId || undefined,
-                replyToMessageId: replyContext?.id || undefined
-              }),
-              signal: controller.signal
-            });
-          })()
-        : await fetchJson(apiBase + "/v1/dialogs/by-public-id/" + encodeURIComponent(getWin().currentDialogPublicId) + "/messages", {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json"
-            },
-            body: JSON.stringify({
-              body,
-              replyToMessageId: replyContext?.id || undefined
-            }),
-            signal: controller.signal
-          });
-      const preparedPayload = await prepareDialogPayloadForDisplay(payload.dialog, payload.message ? [payload.message] : []);
-      const preparedMessage = preparedPayload.messages[0] || payload.message;
-
-      // Inline removeLocalOutgoingMessage
-      getWin().localOutgoingMessages = getWin().localOutgoingMessages.filter((m: any) => m.id !== localMessageId);
-      
-      updateDialogInState(preparedPayload.dialog, {
-        lastMessagePreview: getMessagePreviewText(preparedMessage) || body,
-        lastMessageSenderName: preparedMessage.senderId === getWin().currentUserId
-          ? "You"
-          : (preparedMessage.senderName || preparedPayload.dialog?.title || ""),
-        lastMessageCreatedAt: preparedMessage.createdAt || preparedPayload.dialog?.lastMessageCreatedAt || ""
-      });
-      if (preparedPayload.dialog?.id === getWin().currentDialogId && preparedMessage) {
-        appendConfirmedMessageToCurrentDialog(preparedPayload.dialog, preparedMessage, {
-          scrollBehavior: "smooth",
-          replaceMessageId: localMessageId,
-          animateMessage: false
-        });
-      } else {
-        rerenderCurrentDialog({ scrollBehavior: "smooth", animateList: false, forceScrollBottom: true });
-      }
-
-      if (!currentSearchQuery.trim()) {
-        renderDialogs(getWin().allDialogs);
-      }
-    } catch (error: any) {
-      getWin().localOutgoingMessages = getWin().localOutgoingMessages.map((message: any) => (
-        message.id === localMessageId
-          ? { ...message, localStatus: "failed" }
-          : message
-      ));
-      setStatus(error instanceof Error ? error.message : "Failed to send message.", "error");
-      showToast(error instanceof Error ? error.message : "Failed to send message.", "error");
-      const updateRenderedMessageStatus = getWin().updateRenderedMessageStatus;
-      if (typeof updateRenderedMessageStatus === "function") {
-        updateRenderedMessageStatus(localMessageId, "failed");
-      }
-    } finally {
-      window.clearTimeout(timeoutId);
-      if (composerSend) composerSend.disabled = false;
-      getWin().textMessageSendInFlight = false;
-    }
-  };
+  const sendCurrentMessage = () => sendLegacyComposerMessage({
+    composerInput,
+    composerSend,
+    workspaceUserName
+  });
 
   composerSend?.addEventListener("click", () => {
     void sendCurrentMessage();
-  });
-
-  composerEmojiButton?.addEventListener("mouseenter", () => {
-    openEmojiPicker();
-  });
-
-  composerEmojiButton?.addEventListener("mouseleave", () => {
-    scheduleEmojiPickerClose();
   });
 
   composerEmojiButton?.addEventListener("click", (event) => {
@@ -2917,11 +4034,26 @@ document.addEventListener("DOMContentLoaded", () => {
       symbols: "🔣",
       flags: "🏁"
     };
-    const recentSection = {
-      ...emojiSections[0],
-      emojis: readRecentEmojis()
-    };
-    const sections = [recentSection].concat(emojiSections.slice(1));
+
+    const attachmentModalEmojiPickerSearch = document.getElementById("attachment-modal-emoji-picker-search") as HTMLInputElement | null;
+    const query = String(attachmentModalEmojiPickerSearch?.value || "").trim().toLowerCase();
+
+    let sections;
+    if (query) {
+      sections = emojiSections.map((section) => ({
+        ...section,
+        emojis: section.emojis.filter((emoji) => {
+          const names = (emojiNames as Record<string, string[]>)[emoji] || [];
+          return emoji.includes(query) || names.some((name) => name.toLowerCase().includes(query));
+        })
+      })).filter((section) => section.emojis.length > 0);
+    } else {
+      const recentSection = {
+        ...emojiSections[0],
+        emojis: readRecentEmojis()
+      };
+      sections = [recentSection].concat(emojiSections.slice(1));
+    }
 
     attachmentModalEmojiPickerHead.innerHTML = sections.map((section, index) => {
       const emojiChar = emojiTabIcons[section.key as keyof typeof emojiTabIcons] || "";
@@ -2990,6 +4122,11 @@ document.addEventListener("DOMContentLoaded", () => {
         getWin().pendingImageCaption = attachmentModalCaption.value;
         attachmentModalCaption.focus();
         attachmentModalCaption.setSelectionRange(selectionStart + emoji.length, selectionStart + emoji.length);
+        if (attachmentModalCaption instanceof HTMLElement) {
+          attachmentModalCaption.style.height = "auto";
+          const h = Math.min(100, Math.max(24, attachmentModalCaption.scrollHeight));
+          attachmentModalCaption.style.height = h + "px";
+        }
         rememberRecentEmoji(emoji);
         renderAttachmentEmojiPicker();
       });
@@ -3016,12 +4153,20 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   });
 
-  emojiPicker?.addEventListener("mouseenter", () => {
-    openEmojiPicker();
-  });
+  const attachmentModalEmojiPickerSearch = document.getElementById("attachment-modal-emoji-picker-search") as HTMLInputElement | null;
+  if (attachmentModalEmojiPickerSearch) {
+    attachmentModalEmojiPickerSearch.addEventListener("input", () => {
+      renderAttachmentEmojiPicker();
+    });
+  }
 
-  emojiPicker?.addEventListener("mouseleave", () => {
-    scheduleEmojiPickerClose();
+  document.addEventListener("click", (event) => {
+    if (!attachmentModalEmojiPicker?.classList.contains("open")) return;
+    const target = event.target as HTMLElement | null;
+    if (!target) return;
+    if (!target.closest("#attachment-modal-emoji-picker") && !target.closest("#attachment-modal-emoji-button")) {
+      closeAttachmentEmojiPicker();
+    }
   });
 
   const renderEmojiPicker = getWin().renderEmojiPicker;
@@ -3031,7 +4176,10 @@ document.addEventListener("DOMContentLoaded", () => {
       modeVal = "emoji";
     }
     pickerMode = modeVal;
-    if (emojiPicker) emojiPicker.className = "emoji-picker-container " + modeVal;
+    if (emojiPicker) {
+      emojiPicker.classList.toggle("picker-mode-gif", modeVal === "gif");
+      emojiPicker.classList.toggle("picker-mode-emoji", modeVal !== "gif");
+    }
     if (emojiModeTabEmoji) emojiModeTabEmoji.classList.toggle("active", modeVal === "emoji");
     if (emojiModeTabGif) emojiModeTabGif.classList.toggle("active", modeVal === "gif");
     if (emojiPickerSlideTrack) {
@@ -3043,7 +4191,23 @@ document.addEventListener("DOMContentLoaded", () => {
   };
 
   if (emojiPickerSearch) {
+    emojiPickerSearch.addEventListener("focus", () => {
+      if (emojiPickerCloseTimer) {
+        window.clearTimeout(emojiPickerCloseTimer);
+        emojiPickerCloseTimer = null;
+      }
+    });
+    emojiPickerSearch.addEventListener("keydown", () => {
+      if (emojiPickerCloseTimer) {
+        window.clearTimeout(emojiPickerCloseTimer);
+        emojiPickerCloseTimer = null;
+      }
+    });
     emojiPickerSearch.addEventListener("input", () => {
+      if (emojiPickerCloseTimer) {
+        window.clearTimeout(emojiPickerCloseTimer);
+        emojiPickerCloseTimer = null;
+      }
       if (pickerMode === "emoji") {
         if (typeof renderEmojiPicker === "function") renderEmojiPicker();
       } else {
@@ -3144,24 +4308,29 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   });
 
-  composerAttachButton?.addEventListener("mouseenter", () => {
-    openAttachMenu();
-  });
+  const isHoverSupported = Boolean(window.matchMedia && window.matchMedia("(hover: hover)").matches);
 
-  composerAttachButton?.addEventListener("mouseleave", () => {
-    scheduleAttachMenuClose();
-  });
+  if (isHoverSupported) {
+    composerAttachButton?.addEventListener("mouseenter", () => {
+      openAttachMenu();
+    });
 
-  attachMenu?.addEventListener("mouseenter", () => {
-    openAttachMenu();
-  });
+    composerAttachButton?.addEventListener("mouseleave", () => {
+      scheduleAttachMenuClose();
+    });
 
-  attachMenu?.addEventListener("mouseleave", () => {
-    scheduleAttachMenuClose();
-  });
+    attachMenu?.addEventListener("mouseenter", () => {
+      openAttachMenu();
+    });
+
+    attachMenu?.addEventListener("mouseleave", () => {
+      scheduleAttachMenuClose();
+    });
+  }
 
   composerAttachButton?.addEventListener("click", (event) => {
     event.preventDefault();
+    event.stopPropagation();
     if (attachMenu?.classList.contains("open")) {
       closeAttachMenu();
     } else {
@@ -3231,6 +4400,14 @@ document.addEventListener("DOMContentLoaded", () => {
     closeAttachmentModal();
   });
 
+  attachmentModalAdd?.addEventListener("click", () => {
+    composerFileInput?.click();
+  });
+
+  attachmentModalCancel?.addEventListener("click", () => {
+    closeAttachmentModal();
+  });
+
   attachmentModalPrev?.addEventListener("click", () => {
     moveAttachmentModal(-1);
   });
@@ -3251,19 +4428,32 @@ document.addEventListener("DOMContentLoaded", () => {
       && !target.closest(".attachment-modal-header")
       && !target.closest(".attachment-modal-nav")
       && !target.closest(".attachment-modal-strip")
+      && !target.closest(".attachment-modal-shell")
     ) {
       closeAttachmentModal();
     }
   });
 
+  const autoResizeAttachmentCaption = () => {
+    const captionEl = document.getElementById("attachment-modal-caption") as HTMLTextAreaElement | null;
+    if (captionEl instanceof HTMLElement) {
+      captionEl.style.height = "auto";
+      const h = Math.min(120, Math.max(32, captionEl.scrollHeight));
+      captionEl.style.height = h + "px";
+    }
+  };
+
   attachmentModalCaption?.addEventListener("input", () => {
-    getWin().pendingImageCaption = attachmentModalCaption.value;
+    getWin().pendingImageCaption = (attachmentModalCaption as unknown as HTMLTextAreaElement).value;
+    autoResizeAttachmentCaption();
   });
 
   attachmentModalCaption?.addEventListener("keydown", (event) => {
     if (event.key === "Enter" && !event.shiftKey) {
       event.preventDefault();
       attachmentModalSend?.click();
+    } else if (event.key === "Enter" && event.shiftKey) {
+      requestAnimationFrame(autoResizeAttachmentCaption);
     }
   });
 
@@ -3280,7 +4470,7 @@ document.addEventListener("DOMContentLoaded", () => {
         if (!fileAttachments.length) {
           return;
         }
-        getWin().mediaMessageMessageSendInFlight = true;
+        getWin().mediaMessageSendInFlight = true;
         if (attachmentModalSend) attachmentModalSend.disabled = true;
         if (attachmentModalCaption) attachmentModalCaption.disabled = true;
         const attachmentsToSend = fileAttachments.slice();
@@ -3334,6 +4524,11 @@ document.addEventListener("DOMContentLoaded", () => {
 
   composerInput?.addEventListener("keydown", (event) => {
     if (event.key === "Enter" && !event.shiftKey) {
+      let sendOnEnter = true;
+      try {
+        sendOnEnter = JSON.parse(localStorage.getItem("thegrapht_user_settings_v1") || "{}").sendOnEnter !== false;
+      } catch {}
+      if (!sendOnEnter) return;
       event.preventDefault();
       void sendCurrentMessage();
     }
@@ -4226,7 +5421,13 @@ document.addEventListener("DOMContentLoaded", () => {
   regenerateInitialPills();
 
   // Expose methods on window for legacy interop
+  getWin().getSidebarCurrentSearchQuery = () => currentSearchQuery;
   getWin().renderDialogs = renderDialogs;
+  mountLegacyComposer({
+    composerInput,
+    composerSend,
+    workspaceUserName
+  });
   getWin().renderMessages = renderMessages;
   getWin().applyRoute = applyRoute;
   getWin().loadDialog = loadDialog;
@@ -4238,4 +5439,17 @@ document.addEventListener("DOMContentLoaded", () => {
   getWin().setStatus = setStatus;
   getWin().syncDesktopTitlebar = syncDesktopTitlebar;
   getWin().closeDialog = closeDialog;
+  getWin().showGlobalChipTooltip = showGlobalChipTooltip;
+  getWin().hideGlobalChipTooltip = hideGlobalChipTooltip;
+
+  window.addEventListener("thegrapht:language-changed", () => {
+    if (Array.isArray(getWin().allDialogs)) renderDialogs(getWin().allDialogs);
+    document.querySelectorAll<HTMLElement>(".message-day-separator[data-day-ts] span").forEach((labelNode) => {
+      const dayNode = labelNode.closest<HTMLElement>(".message-day-separator");
+      const dayTimestamp = Number(dayNode?.dataset.dayTs || 0);
+      const formatter = getWin().formatDaySeparatorLabel;
+      if (dayTimestamp > 0 && typeof formatter === "function") labelNode.textContent = formatter(dayTimestamp);
+    });
+    if (typeof getWin().syncChatHeaderMeta === "function") getWin().syncChatHeaderMeta();
+  });
 });

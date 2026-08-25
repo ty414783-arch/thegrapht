@@ -1,3 +1,44 @@
+import { iconMap, lucideSvgs } from "../../server/icons.js";
+import { thgClient } from "./thg-protocol-client";
+import { t } from "../i18n";
+import { onDomReady } from "../shared/lib/on-dom-ready.ts";
+import {
+  renderLegacyEmojiPicker,
+  resetLegacyEmojiPickerTabState
+} from "../features/chat/legacyEmojiPickerMount.tsx";
+
+// Global SVG icon renderer
+export const getIcon = (name: string, extraClasses = "", attrs = ""): string => {
+  const lucideName = (iconMap as any)[name] || name;
+  const svgContent = (lucideSvgs as any)[lucideName];
+  if (!svgContent) {
+    console.warn("Icon not found:", name);
+    return "";
+  }
+  const attrStr = attrs ? " " + attrs : "";
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-svg icon-${lucideName} ${extraClasses}"${attrStr}>${svgContent}</svg>`;
+};
+
+export const updateIcon = (elementOrParent: Element | null, name: string) => {
+  if (!elementOrParent) return;
+  const svgEl = elementOrParent.tagName.toLowerCase() === "svg" ? elementOrParent : elementOrParent.querySelector("svg");
+  if (svgEl) {
+    const temp = document.createElement("div");
+    const existingClasses = svgEl.getAttribute("class") || "";
+    const filteredClasses = existingClasses.split(/\s+/).filter(c => !c.startsWith("icon-")).join(" ");
+    temp.innerHTML = getIcon(name, filteredClasses);
+    const newSvg = temp.firstElementChild;
+    if (newSvg) {
+      svgEl.replaceWith(newSvg);
+    }
+  } else {
+    elementOrParent.innerHTML = getIcon(name);
+  }
+};
+
+(window as any).getIcon = getIcon;
+(window as any).updateIcon = updateIcon;
+
 // Application bootstrap and globals initialization service
 export {};
 
@@ -25,6 +66,15 @@ window.addEventListener('error', (event) => {
   }
 }, true);
 
+// Initialize THG Protocol v1 on page load
+if (typeof window !== "undefined") {
+  window.addEventListener("DOMContentLoaded", () => {
+    setTimeout(() => {
+      thgClient.initSession();
+    }, 1000);
+  });
+}
+
 
 const getConfig = () => {
   const win = window as any;
@@ -47,6 +97,9 @@ const explicitApiBase = getConfig().apiBaseUrl || "";
 const publicWebHosts = new Set(["web.thegrapht.su", "dev.thegrapht.su", "thegrapht.su", "www.thegrapht.su", "asymprote.thegrapht.su", "asymproto.thegrapht.su"]);
 const isLoopbackHostname = (value: string) => /^(localhost|127\.0\.0\.1|0\.0\.0\.0)$/i.test(String(value || ""));
 const resolveApiBase = () => {
+  if (typeof window !== "undefined" && (window.location.protocol === "file:" || !window.location.hostname)) {
+    return "https://web.thegrapht.su/api";
+  }
   const currentHost = window.location.hostname || "";
   if (!explicitApiBase) {
     return "/api";
@@ -432,6 +485,21 @@ const getEmojiAssetUrl = (emoji: string) => {
 };
 (window as any).getEmojiAssetUrl = getEmojiAssetUrl;
 
+const scheduleEmojiPickerWarmup = () => {
+  const runWarmup = () => {
+    const renderEmojiPicker = (window as any).renderEmojiPicker;
+    if (typeof renderEmojiPicker === "function") {
+      renderEmojiPicker({ force: true });
+    }
+  };
+  if (typeof window.requestIdleCallback === "function") {
+    window.requestIdleCallback(runWarmup, { timeout: 1200 });
+  } else {
+    window.setTimeout(runWarmup, 300);
+  }
+};
+(window as any).scheduleEmojiPickerWarmup = scheduleEmojiPickerWarmup;
+
 const renderEmojiAwareTextHtml = (value: any, options: any = {}) => {
   const text = String(value ?? "");
   const extraClass = options.extraClass ? " " + options.extraClass : "";
@@ -461,7 +529,8 @@ const linkifyMessageBody = (value: any) => {
   const text = String(value ?? "");
   const linkPattern = new RegExp(
     "(^|[^a-zA-Z0-9_@+.-])(" +
-      "[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}" +
+      "@[a-zA-Z0-9_]{3,32}" +
+      "|[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}" +
       "|(?:\\+?\\d[\\d\\s().-]{6,}\\d)" +
       "|(?:https?:\\/\\/|www\\.)[^\\s<]+" +
       "|(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\\.)+[a-z]{2,}(?:\\/[^\\s<]*)?" +
@@ -486,6 +555,15 @@ const linkifyMessageBody = (value: any) => {
     }
 
     if (!visibleLink) continue;
+
+    if (visibleLink.startsWith("@") && !visibleLink.includes(".")) {
+      const username = visibleLink.slice(1);
+      result += renderEmojiAwareTextHtml(text.slice(cursor, start));
+      result += '<span class="message-mention" data-username="' + escapeHtml(username.toLowerCase()) + '">@' + renderEmojiAwareTextHtml(username) + '</span>';
+      result += renderEmojiAwareTextHtml(trailing);
+      cursor = end;
+      continue;
+    }
 
     const lowerVisibleLink = visibleLink.toLowerCase();
     const isEmail = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(visibleLink);
@@ -903,7 +981,15 @@ const hardPinMessagesToBottom = (token: number = 0) => {
     window.setTimeout(() => {
       if (bottomLockCanceledByUser || (token && token !== bottomLockToken)) return;
       snapMessagesToBottom();
-    }, 80);
+    }, 60);
+    window.setTimeout(() => {
+      if (bottomLockCanceledByUser || (token && token !== bottomLockToken)) return;
+      snapMessagesToBottom();
+    }, 180);
+    window.setTimeout(() => {
+      if (bottomLockCanceledByUser || (token && token !== bottomLockToken)) return;
+      snapMessagesToBottom();
+    }, 320);
   });
 };
 (window as any).hardPinMessagesToBottom = hardPinMessagesToBottom;
@@ -1132,8 +1218,7 @@ const createRipple = (e: any) => {
 
 document.addEventListener("mousedown", createRipple);
 document.addEventListener("touchstart", createRipple, { passive: true });
-// Listen to DOMContentLoaded
-document.addEventListener("DOMContentLoaded", () => {
+onDomReady(() => {
   const bootSplash = document.getElementById("boot-splash");
   const pageRoot = document.getElementById("page-root");
 
@@ -1144,26 +1229,46 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   // Setup layout widths
-  let storedWidth = 360;
+  let storedWidth = 380;
   try {
-    storedWidth = Number(window.localStorage.getItem("thegrapht_sidebar_width") || 360);
+    storedWidth = Number(window.localStorage.getItem("thegrapht_sidebar_width") || 380);
   } catch {}
   const workspaceShell = document.querySelector(".workspace-shell") as HTMLElement;
+  const workspaceSidebar = document.querySelector(".workspace-sidebar") as HTMLElement;
   if (workspaceShell) {
-    const nextWidth = Math.max(320, Math.min(Math.min(920, Math.floor((window.innerWidth || 0) * 0.68)) || 920, storedWidth));
+    const maxWidth = Math.max(280, Math.min(920, Math.floor((window.innerWidth || 0) * 0.5)) || 920);
+    let nextWidth = Math.max(78, Math.min(maxWidth, Number.isFinite(storedWidth) ? storedWidth : 380));
+    if (nextWidth <= 120) {
+      nextWidth = 78;
+    }
+    const collapse = nextWidth <= 78 ? 1 : nextWidth >= 280 ? 0 : (280 - nextWidth) / (280 - 78);
     workspaceShell.style.setProperty("--sidebar-width", nextWidth + "px");
+    workspaceShell.style.setProperty("--sidebar-collapse", String(collapse));
+    document.documentElement.style.setProperty("--sidebar-width", nextWidth + "px");
+    document.documentElement.style.setProperty("--sidebar-collapse", String(collapse));
+    workspaceSidebar?.classList.toggle("sidebar-collapsed", collapse > 0.92);
+    window.requestAnimationFrame(() => {
+      document.documentElement.classList.add("sidebar-ready");
+    });
   }
 
   const messageList = document.getElementById("message-list");
+  let bootstrapScrollTicking = false;
   messageList?.addEventListener("scroll", () => {
-    if (!suppressBottomLockCancel) {
-      const isNear = computeIsNearChatBottom();
-      if (!isNear && !bottomLockCanceledByUser) {
-        cancelBottomLock();
-      }
+    if (!bootstrapScrollTicking) {
+      bootstrapScrollTicking = true;
+      requestAnimationFrame(() => {
+        if (!suppressBottomLockCancel) {
+          const isNear = computeIsNearChatBottom();
+          if (!isNear && !bottomLockCanceledByUser) {
+            cancelBottomLock();
+          }
+        }
+        syncChatScrollBottomButton();
+        bootstrapScrollTicking = false;
+      });
     }
-    syncChatScrollBottomButton();
-  });
+  }, { passive: true });
 
   // DOM element references for emoji / GIF picker
   const emojiPicker = document.getElementById("emoji-picker");
@@ -1178,6 +1283,133 @@ document.addEventListener("DOMContentLoaded", () => {
   const emojiPickerSearch = document.getElementById("emoji-picker-search") as HTMLInputElement | null;
   const chatComposer = document.getElementById("chat-composer");
   const attachMenu = document.getElementById("attach-menu");
+  const composerStack = chatComposer?.querySelector(".composer-stack") as HTMLElement | null;
+  const composerSend = document.getElementById("composer-send");
+  const channelSubscriberBar = document.getElementById("channel-subscriber-bar");
+  const channelSubscribeBar = document.getElementById("channel-subscribe-bar");
+  const channelMuteToggle = document.getElementById("channel-mute-toggle");
+  const channelMuteToggleLabel = document.getElementById("channel-mute-toggle-label");
+  const channelSubscribeButton = document.getElementById("channel-subscribe-button") as HTMLButtonElement | null;
+
+  type ChannelComposerMode = "admin" | "subscriber" | "guest" | "normal";
+
+  const getChannelComposerMode = (dialog: any): ChannelComposerMode => {
+    if (dialog?.type !== "channel") {
+      return "normal";
+    }
+    if (dialog.channelCanPost) {
+      return "admin";
+    }
+    if (dialog.channelIsMember === true) {
+      return "subscriber";
+    }
+    return "guest";
+  };
+
+  const syncChannelMuteLabel = (publicId: string) => {
+    if (!channelMuteToggleLabel) {
+      return;
+    }
+    const readEnabled = (window as any).isDialogNotificationsEnabled;
+    const notificationsEnabled = typeof readEnabled === "function"
+      ? readEnabled(publicId)
+      : true;
+    channelMuteToggleLabel.textContent = notificationsEnabled ? t("channel.mute") : t("channel.unmute");
+    channelMuteToggle?.setAttribute(
+      "aria-label",
+      notificationsEnabled ? t("channel.mute") : t("channel.unmute")
+    );
+  };
+
+  const handleChannelSubscribe = async () => {
+    const dialog = (window as any).currentDialogSnapshot;
+    if (!dialog || dialog.type !== "channel" || dialog.channelIsMember === true || !channelSubscribeButton) {
+      return;
+    }
+
+    const body: Record<string, string> = {};
+    if (dialog.channelSlug) {
+      body.slug = dialog.channelSlug;
+    } else if (dialog.channelInviteToken) {
+      body.inviteToken = dialog.channelInviteToken;
+    } else {
+      return;
+    }
+
+    channelSubscribeButton.disabled = true;
+    try {
+      const response = await fetch((window as any).apiBase + "/v1/channels/join", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-THG-Protocol": "1"
+        },
+        body: JSON.stringify(body)
+      });
+      const payload = await response.json();
+      if (!response.ok || !payload?.dialog?.publicId) {
+        throw new Error(payload?.error || "Failed to subscribe.");
+      }
+
+      const nextDialog = {
+        ...dialog,
+        ...payload.dialog,
+        channelIsMember: true
+      };
+
+      const updateDialogInState = (window as any).updateDialogInState;
+      const upsertedDialog = typeof updateDialogInState === "function"
+        ? updateDialogInState(nextDialog, {})
+        : null;
+      if (!upsertedDialog) {
+        (window as any).allDialogs = Array.isArray((window as any).allDialogs)
+          ? [nextDialog, ...(window as any).allDialogs]
+          : [nextDialog];
+      }
+
+      (window as any).currentDialogSnapshot = {
+        ...((window as any).currentDialogSnapshot || dialog),
+        ...nextDialog,
+        channelIsMember: true
+      };
+
+      const setDialogPayloadCache = (window as any).setDialogPayloadCache;
+      if (typeof setDialogPayloadCache === "function" && nextDialog.publicId) {
+        setDialogPayloadCache(nextDialog.publicId, {
+          dialog: (window as any).currentDialogSnapshot,
+          messages: (window as any).currentMessagesSnapshot || []
+        });
+      }
+
+      const renderDialogs = (window as any).renderDialogs;
+      if (typeof renderDialogs === "function") {
+        renderDialogs((window as any).allDialogs || []);
+      }
+
+      const syncChatHeaderMeta = (window as any).syncChatHeaderMeta;
+      if (typeof syncChatHeaderMeta === "function") {
+        syncChatHeaderMeta();
+      }
+      const syncChatProfilePanel = (window as any).syncChatProfilePanel;
+      if (typeof syncChatProfilePanel === "function") {
+        syncChatProfilePanel();
+      }
+
+      syncComposerState();
+
+      const requestPermission = (window as any).requestDesktopNotificationPermission;
+      if (typeof requestPermission === "function") {
+        void requestPermission();
+      }
+    } catch (error) {
+      const showToast = (window as any).showToast;
+      if (typeof showToast === "function") {
+        showToast(error instanceof Error ? error.message : "Failed to subscribe.", "error");
+      }
+    } finally {
+      channelSubscribeButton.disabled = false;
+    }
+  };
 
   let emojiPickerCloseTimer: any = null;
   let attachMenuCloseTimer: any = null;
@@ -1230,21 +1462,96 @@ document.addEventListener("DOMContentLoaded", () => {
   };
 
   const syncComposerState = () => {
-    if (chatComposer) chatComposer.classList.toggle("send-active", composerHasValue());
-    if (composerInput) composerInput.placeholder = "Message";
+    const currentDialog = (window as any).currentDialogSnapshot;
+    const channelMode = getChannelComposerMode(currentDialog);
+    const isChannelSubscriber = channelMode === "subscriber";
+    const isChannelGuest = channelMode === "guest";
+    const isChannelReadOnly = isChannelSubscriber || isChannelGuest;
+
+    if (chatComposer) {
+      chatComposer.classList.toggle("send-active", composerHasValue() && !isChannelReadOnly);
+      chatComposer.classList.toggle("channel-read-only", false);
+      chatComposer.classList.toggle("channel-subscriber-mode", isChannelSubscriber);
+      chatComposer.classList.toggle("channel-guest-mode", isChannelGuest);
+      chatComposer.style.display = currentDialog ? "flex" : "none";
+    }
+    if (composerStack) {
+      composerStack.hidden = isChannelReadOnly;
+    }
+    if (composerSend) {
+      composerSend.hidden = isChannelReadOnly;
+    }
+    if (channelSubscriberBar) {
+      channelSubscriberBar.hidden = !isChannelSubscriber;
+    }
+    if (channelSubscribeBar) {
+      channelSubscribeBar.hidden = !isChannelGuest;
+    }
+    if (isChannelSubscriber && currentDialog?.publicId) {
+      syncChannelMuteLabel(currentDialog.publicId);
+    }
+    if (composerInput) {
+      composerInput.placeholder = channelMode === "admin" || channelMode === "normal"
+        ? "Message"
+        : "";
+      composerInput.readOnly = channelMode !== "admin" && channelMode !== "normal";
+    }
     renderComposerOverlay();
     syncComposerInputHeight();
   };
   (window as any).syncComposerState = syncComposerState;
 
-  const filterEmojiSections = (sections: any[], queryStr: string) => {
-    if (!queryStr) return sections;
-    const lowerQuery = queryStr.toLowerCase();
-    return sections.map((section) => ({
-      ...section,
-      emojis: section.emojis.filter((emoji: string) => emoji.toLowerCase().includes(lowerQuery))
-    })).filter((section) => section.emojis.length > 0);
-  };
+  let channelMuteBusy = false;
+  channelMuteToggle?.addEventListener("click", async (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    const dialog = (window as any).currentDialogSnapshot;
+    if (channelMuteBusy || !dialog?.publicId || dialog.type !== "channel" || getChannelComposerMode(dialog) !== "subscriber") {
+      return;
+    }
+    const readEnabled = (window as any).isDialogNotificationsEnabled;
+    const writeEnabled = (window as any).setDialogNotificationsEnabled;
+    if (typeof readEnabled !== "function" || typeof writeEnabled !== "function") {
+      return;
+    }
+    const nextEnabled = !readEnabled(dialog.publicId);
+    channelMuteBusy = true;
+    try {
+      if (nextEnabled) {
+        const requestPermission = (window as any).requestDesktopNotificationPermission;
+        const permission = typeof requestPermission === "function"
+          ? await requestPermission()
+          : (typeof Notification !== "undefined" ? Notification.permission : "denied");
+        if (permission !== "granted") {
+          writeEnabled(dialog.publicId, false);
+          syncComposerState();
+          const showToast = (window as any).showToast;
+          if (typeof showToast === "function") {
+            showToast(t("toast.notificationsPermissionDenied"), "error");
+          }
+          return;
+        }
+      }
+      writeEnabled(dialog.publicId, nextEnabled);
+      syncComposerState();
+      const syncGroupNotificationsToggle = (window as any).syncGroupNotificationsToggle;
+      if (typeof syncGroupNotificationsToggle === "function") {
+        syncGroupNotificationsToggle();
+      }
+      const showToast = (window as any).showToast;
+      if (typeof showToast === "function") {
+        showToast(nextEnabled ? t("toast.notificationsEnabled") : t("toast.notificationsMuted"), "info");
+      }
+    } finally {
+      window.setTimeout(() => {
+        channelMuteBusy = false;
+      }, 350);
+    }
+  });
+
+  channelSubscribeButton?.addEventListener("click", () => {
+    void handleChannelSubscribe();
+  });
 
   const setPickerMode = (mode: string) => {
     if (mode === "gif" && emojiModeTabGif && (emojiModeTabGif.classList.contains("disabled") || emojiModeTabGif.hasAttribute("disabled"))) {
@@ -1440,91 +1747,25 @@ document.addEventListener("DOMContentLoaded", () => {
   };
   (window as any).renderGifPicker = renderGifPicker;
 
-  const emojiTabIcons: Record<string, string> = {
-    recent: '🕒',
-    people: '😀',
-    nature: '🌲',
-    food: '🍔',
-    activity: '⚽',
-    travel: '🚗',
-    objects: '💡',
-    symbols: '❤️',
-    flags: '🚩'
-  };
+  let emojiPickerDomBuilt = false;
+  let emojiPickerLastQuery = "";
 
-  const renderEmojiPicker = () => {
+  const renderEmojiPicker = (options: { force?: boolean } = {}) => {
     if (!emojiPickerHead || !emojiPickerBody) return;
     const query = emojiPickerSearch ? emojiPickerSearch.value.trim() : "";
-    const recentSection = {
-      ...(window as any).emojiSections[0],
-      emojis: (window as any).readRecentEmojis()
-    };
-    let sections = [recentSection].concat((window as any).emojiSections.slice(1));
-    if (query) {
-      sections = filterEmojiSections(sections, query);
-    }
-
-    emojiPickerHead.innerHTML = sections.map((section, index) => {
-      const emojiChar = emojiTabIcons[section.key] || "";
-      const emojiAssetUrl = (window as any).getEmojiAssetUrl(emojiChar);
-      const iconHtml = emojiAssetUrl
-        ? '<img class="emoji-picker-tab-image" src="' + (window as any).escapeHtml(emojiAssetUrl) + '" alt="' + (window as any).escapeHtml(emojiChar) + '" aria-hidden="true" loading="lazy" decoding="async">'
-        : '<span class="emoji-picker-tab-fallback">' + (window as any).escapeHtml(emojiChar) + '</span>';
-
-      return '<button class="emoji-picker-tab' + (index === 0 ? ' active' : '') + '" type="button" data-emoji-tab="' + section.key + '" aria-label="' + (window as any).escapeHtml(section.title) + '">' +
-        iconHtml +
-      '</button>';
-    }).join("");
-
-    if (sections.length === 0) {
-      emojiPickerBody.innerHTML = '<div class="emoji-picker-no-results">Ничего не найдено</div>';
+    if (!options.force && emojiPickerDomBuilt && query === emojiPickerLastQuery) {
       return;
     }
+    if (options.force && !query) {
+      resetLegacyEmojiPickerTabState();
+    }
 
-    emojiPickerBody.innerHTML = sections.map((section) => (
-      '<section class="emoji-picker-section" data-emoji-section="' + section.key + '">' +
-        '<p class="emoji-picker-title">' + (window as any).escapeHtml(section.title) + '</p>' +
-        (
-          section.emojis.length
-            ? '<div class="emoji-picker-grid">' + section.emojis.map((emoji: string) => (
-              (() => {
-                const emojiAssetUrl = (window as any).getEmojiAssetUrl(emoji);
-                return (
-              '<button class="emoji-button" type="button" data-emoji-value="' + (window as any).escapeHtml(emoji) + '" aria-label="' + (window as any).escapeHtml(emoji) + '">' +
-                (
-                  emojiAssetUrl
-                    ? '<img class="emoji-button-image" src="' + (window as any).escapeHtml(emojiAssetUrl) + '" alt="' + (window as any).escapeHtml(emoji) + '" aria-hidden="true" loading="lazy" decoding="async">'
-                    : '<span class="emoji-button-image" aria-hidden="true">' + (window as any).escapeHtml(emoji) + '</span>'
-                ) +
-              '</button>'
-                );
-              })()
-            )).join("") + '</div>'
-            : '<div class="emoji-picker-title">Nothing here yet</div>'
-        ) +
-      '</section>'
-    )).join("");
-
-    emojiPickerHead.querySelectorAll("[data-emoji-tab]").forEach((button) => {
-      button.addEventListener("click", () => {
-        const key = button.getAttribute("data-emoji-tab");
-        if (!key) return;
-        emojiPickerHead.querySelectorAll("[data-emoji-tab]").forEach((node) => node.classList.toggle("active", node === button));
-        const targetSection = emojiPickerBody.querySelector('[data-emoji-section="' + key + '"]');
-        if (targetSection) {
-          const targetScrollTop = targetSection.getBoundingClientRect().top - emojiPickerBody.getBoundingClientRect().top + emojiPickerBody.scrollTop;
-          emojiPickerBody.scrollTo({
-            top: targetScrollTop,
-            behavior: "smooth"
-          });
-        }
-      });
-    });
-
-    emojiPickerBody.querySelectorAll("[data-emoji-value]").forEach((button) => {
-      button.addEventListener("click", () => {
-        const emoji = button.getAttribute("data-emoji-value");
-        if (!emoji || !composerInput) return;
+    renderLegacyEmojiPicker({
+      headEl: emojiPickerHead,
+      bodyEl: emojiPickerBody,
+      query,
+      onEmojiSelect: (emoji) => {
+        if (!composerInput) return;
 
         const selectionStart = composerInput.selectionStart ?? composerInput.value.length;
         const selectionEnd = composerInput.selectionEnd ?? composerInput.value.length;
@@ -1533,11 +1774,18 @@ document.addEventListener("DOMContentLoaded", () => {
         composerInput.setSelectionRange(selectionStart + emoji.length, selectionStart + emoji.length);
         (window as any).rememberRecentEmoji(emoji);
         syncComposerState();
-        renderEmojiPicker();
-      });
+        emojiPickerDomBuilt = false;
+        renderEmojiPicker({ force: true });
+      }
     });
+
+    if (!query) {
+      emojiPickerDomBuilt = true;
+    }
+    emojiPickerLastQuery = query;
   };
   (window as any).renderEmojiPicker = renderEmojiPicker;
+  scheduleEmojiPickerWarmup();
 
   const closeEmojiPicker = () => {
     if (emojiPickerCloseTimer) {
@@ -1548,6 +1796,10 @@ document.addEventListener("DOMContentLoaded", () => {
       emojiPicker.classList.remove("open");
       emojiPicker.setAttribute("aria-hidden", "true");
     }
+    const chatWindowEl = document.getElementById("chat-window");
+    if (chatWindowEl) {
+      chatWindowEl.classList.remove("emoji-picker-open");
+    }
     if (emojiPickerSearch) {
       emojiPickerSearch.value = "";
     }
@@ -1557,10 +1809,18 @@ document.addEventListener("DOMContentLoaded", () => {
   const scheduleEmojiPickerClose = () => {
     if (emojiPickerCloseTimer) {
       window.clearTimeout(emojiPickerCloseTimer);
+      emojiPickerCloseTimer = null;
+    }
+    // Do NOT close if search input is focused or active
+    if (emojiPickerSearch && (document.activeElement === emojiPickerSearch || emojiPickerSearch.value.trim())) {
+      return;
     }
     emojiPickerCloseTimer = window.setTimeout(() => {
+      if (emojiPickerSearch && (document.activeElement === emojiPickerSearch || emojiPickerSearch.value.trim())) {
+        return;
+      }
       closeEmojiPicker();
-    }, 120);
+    }, 250);
   };
   (window as any).scheduleEmojiPickerClose = scheduleEmojiPickerClose;
 
@@ -1569,11 +1829,18 @@ document.addEventListener("DOMContentLoaded", () => {
       window.clearTimeout(emojiPickerCloseTimer);
       emojiPickerCloseTimer = null;
     }
+    (window as any).closeChatProfilePanel?.();
     setPickerMode("emoji");
-    renderEmojiPicker();
     if (emojiPicker) {
       emojiPicker.classList.add("open");
       emojiPicker.setAttribute("aria-hidden", "false");
+    }
+    const chatWindowEl = document.getElementById("chat-window");
+    if (chatWindowEl) {
+      chatWindowEl.classList.add("emoji-picker-open");
+    }
+    if (!emojiPickerDomBuilt) {
+      renderEmojiPicker({ force: true });
     }
   };
   (window as any).openEmojiPicker = openEmojiPicker;

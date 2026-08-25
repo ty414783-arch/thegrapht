@@ -1,0 +1,19 @@
+.imageButton {
+  display: block;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+  text-align: left;
+}
+
+.image {
+  display: block;
+  max-width: min(320px, 100%);
+  border-radius: 12px;
+}
+
+.caption {
+  display: block;
+  margin-top: 6px;
+}

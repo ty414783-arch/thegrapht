@@ -1,3 +1,6 @@
+import { googleSpinnerMarkup } from "../../server/components/google-spinner.js";
+import { mountLegacyScrollBottomIcon } from "../features/chat/mountLegacyScrollBottomIcon.tsx";
+
 export {};
 
 declare const currentDialogPublicId: string | null;
@@ -5,6 +8,9 @@ declare let currentMessagesSnapshot: any[] | null;
 declare const fetchJson: (url: string, options?: any) => Promise<any>;
 declare const apiBase: string;
 declare const annotateGroupIncomingSequences: (items: any[]) => any[];
+declare const annotateMessageSequences: (items: any[]) => any[];
+declare const applySequenceMetaFromSnapshot: (items: any[]) => any[];
+declare const reconcileSequenceHeadDom: (items: any[]) => void;
 declare const buildRenderableMessageItems: (messages: any[]) => any[];
 declare const renderDaySeparator: (dayValue: any) => string;
 declare const renderAlbumMessage: (messages: any[], options: any) => string;
@@ -50,7 +56,7 @@ const loadOlderMessages = async () => {
 
   const loaderDiv = document.createElement("div");
   loaderDiv.className = "chat-spinner-container top-spinner";
-  loaderDiv.innerHTML = '<div class="boot-splash-inner"><svg class="boot-splash-circular" viewBox="22 22 44 44" aria-hidden="true" focusable="false"><circle class="boot-splash-circular-indicator" cx="44" cy="44" r="20.2"></circle></svg></div>';
+  loaderDiv.innerHTML = googleSpinnerMarkup(36);
   
   messageList.prepend(loaderDiv);
 
@@ -88,16 +94,29 @@ const loadOlderMessages = async () => {
 
     (window as any).currentMessagesSnapshot = uniqueNewMessages.concat(messages);
 
-    const items = annotateGroupIncomingSequences(buildRenderableMessageItems(uniqueNewMessages));
-    const html = items.map((item) => (
+    const newItems = buildRenderableMessageItems(uniqueNewMessages);
+    const annotateFn = (window as any).annotateMessageSequences
+      || (window as any).annotateGroupIncomingSequences
+      || (window as any).applySequenceMetaFromSnapshot
+      || null;
+    const normalizedItems = typeof (window as any).applySequenceMetaFromSnapshot === "function"
+      ? (window as any).applySequenceMetaFromSnapshot(newItems)
+      : (typeof annotateFn === "function" ? annotateFn(newItems) : newItems);
+    const html = normalizedItems.map((item) => (
       item.kind === "day"
         ? renderDaySeparator(item.dayValue)
         : item.kind === "album"
-          ? renderAlbumMessage(item.messages, { groupIncomingMeta: item.groupIncomingMeta })
-          : renderSingleMessage(item.messages[0], { groupIncomingMeta: item.groupIncomingMeta })
+          ? renderAlbumMessage(item.messages, { groupIncomingMeta: item.groupIncomingMeta, outgoingSeqMeta: item.outgoingSeqMeta })
+          : renderSingleMessage(item.messages[0], { groupIncomingMeta: item.groupIncomingMeta, outgoingSeqMeta: item.outgoingSeqMeta })
     )).join("");
 
-    messageList.insertAdjacentHTML('afterbegin', html);
+    messageList.insertAdjacentHTML("afterbegin", html);
+
+    const annotateAll = (window as any).annotateMessageSequences;
+    const reconcileHead = (window as any).reconcileSequenceHeadDom;
+    if (typeof annotateAll === "function" && typeof reconcileHead === "function") {
+      reconcileHead(annotateAll(buildRenderableMessageItems((window as any).currentMessagesSnapshot)));
+    }
     
     if (typeof normalizeMessageDaySeparators === "function") {
       normalizeMessageDaySeparators();
@@ -118,33 +137,47 @@ const loadOlderMessages = async () => {
 };
 
 const initScrollPagination = () => {
+  mountLegacyScrollBottomIcon();
   const messageList = document.getElementById("message-list");
   const chatScrollBottom = document.getElementById("chat-scroll-bottom");
   if (!messageList || !chatScrollBottom) return;
 
-  messageList.addEventListener("scroll", () => {
-    rememberCurrentDialogScrollTop();
-    syncChatScrollBottomButton();
-    updateScrollDayIndicator();
+  let scrollTicking = false;
 
-    if (computeIsNearChatBottom()) {
-      const unreadDivider = messageList.querySelector(".message-unread-divider");
-      if (unreadDivider && !(unreadDivider as HTMLElement).dataset.dismissing) {
-        (unreadDivider as HTMLElement).dataset.dismissing = "true";
-        (unreadDivider as HTMLElement).style.opacity = "0";
-        (unreadDivider as HTMLElement).style.height = "0";
-        (unreadDivider as HTMLElement).style.margin = "0";
-        (unreadDivider as HTMLElement).style.padding = "0";
-        (unreadDivider as HTMLElement).style.border = "none";
-        window.setTimeout(() => {
-          unreadDivider.remove();
-        }, 300);
-      }
-    }
-    
-    // Only load more if we are near top AND there is actually content to scroll!
-    if (messageList.scrollTop < 50 && messageList.scrollHeight > messageList.clientHeight) {
-      void loadOlderMessages();
+  messageList.addEventListener("scroll", () => {
+    if (!scrollTicking) {
+      scrollTicking = true;
+      requestAnimationFrame(() => {
+        rememberCurrentDialogScrollTop();
+        syncChatScrollBottomButton();
+        updateScrollDayIndicator();
+
+        if (computeIsNearChatBottom()) {
+          const dismissUnreadDivider = (window as any).dismissUnreadDivider;
+          if (typeof dismissUnreadDivider === "function") {
+            dismissUnreadDivider();
+          } else {
+            const unreadDivider = messageList.querySelector(".message-unread-divider");
+            if (unreadDivider && !(unreadDivider as HTMLElement).dataset.dismissing) {
+              (unreadDivider as HTMLElement).dataset.dismissing = "true";
+              (unreadDivider as HTMLElement).style.opacity = "0";
+              (unreadDivider as HTMLElement).style.height = "0";
+              (unreadDivider as HTMLElement).style.margin = "0";
+              (unreadDivider as HTMLElement).style.padding = "0";
+              (unreadDivider as HTMLElement).style.border = "none";
+              window.setTimeout(() => {
+                unreadDivider.remove();
+              }, 300);
+            }
+          }
+        }
+
+        if (messageList.scrollTop < 50 && messageList.scrollHeight > messageList.clientHeight) {
+          void loadOlderMessages();
+        }
+
+        scrollTicking = false;
+      });
     }
   }, { passive: true });
 

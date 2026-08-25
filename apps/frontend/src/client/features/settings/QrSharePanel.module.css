@@ -1,0 +1,24 @@
+.shell {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.shell button {
+  align-self: flex-start;
+  border: 0;
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.05);
+  padding: 8px 10px;
+  cursor: pointer;
+}
+
+.panel {
+  padding: 10px;
+  border-radius: 10px;
+  background: rgba(0, 0, 0, 0.04);
+}
+
+.panel p {
+  margin: 0 0 8px;
+}

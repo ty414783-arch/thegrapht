@@ -1,10 +1,38 @@
 // Message Actions Service (Reply, Context Menu, Delete, Download, Jump to message)
-export {};
+import { onDomReady } from "../shared/lib/on-dom-ready.ts";
+import {
+  getLegacyContextMenuActions,
+  getLegacyMessageLinkOrText,
+  isLegacyMessageDownloadable
+} from "../features/profile/legacyMessageContextMenuSync.ts";
+import { renderLegacyMessageContextMenuBody } from "../features/profile/legacyMessageContextMenuMount.tsx";
+import {
+  getLegacyDeleteMessageModalState
+} from "../features/chat/legacyDeleteMessageModalSync.ts";
+import {
+  mountLegacyDeleteMessageModalShell,
+  renderLegacyDeleteMessageModalBody
+} from "../features/chat/legacyDeleteMessageModalMount.tsx";
+import {
+  setLegacyComposerReplyPreviewHandlers,
+  syncLegacyComposerReplyPreview
+} from "../features/chat/legacyComposerReplyPreviewMount.tsx";
 
 const getWin = () => window as any;
 
 const messageHighlightTimers = new Map<string, any>();
 const deletingMessageIdsInFlight = new Set<string>();
+
+const canOpenMessageContextMenu = (): boolean => {
+  const dialog = getWin().currentDialogSnapshot;
+  if (!dialog) {
+    return true;
+  }
+  if (dialog.type === "channel" && dialog.channelCanPost !== true) {
+    return false;
+  }
+  return true;
+};
 
 const getCurrentDialogMessageById = (messageId: string): any => {
   const currentMessagesSnapshot = getWin().currentMessagesSnapshot;
@@ -16,24 +44,8 @@ const getCurrentDialogMessageById = (messageId: string): any => {
   );
 };
 
-const getReplyPreviewCopy = (message: any): string => {
-  if (!message) {
-    return "";
-  }
-
-  if (message.albumId && Number(message.albumSize) > 1) {
-    return (Number(message.albumSize) || 0) + " photos";
-  }
-
-  if (message.type === "image") {
-    return message.body ? ("Photo: " + message.body) : "Photo";
-  }
-
-  if (message.type === "audio") {
-    return message.body ? ("Audio: " + message.body) : "Audio";
-  }
-
-  return String(message.body || "").trim();
+const syncComposerReplyPreview = () => {
+  syncLegacyComposerReplyPreview(getWin().pendingReplyMessage);
 };
 
 const clearMessageHighlight = (messageId: string) => {
@@ -105,36 +117,6 @@ const jumpToMessage = (messageId: string) => {
   window.requestAnimationFrame(waitForArrival);
 };
 
-const syncComposerReplyPreview = () => {
-  const composerReplyPreview = document.getElementById("composer-reply-preview");
-  const composerReplyAuthor = document.getElementById("composer-reply-author");
-  const composerReplyText = document.getElementById("composer-reply-text");
-  if (!composerReplyPreview) {
-    return;
-  }
-
-  const pendingReplyMessage = getWin().pendingReplyMessage;
-  if (!pendingReplyMessage) {
-    composerReplyPreview.classList.remove("visible");
-    composerReplyPreview.setAttribute("aria-hidden", "true");
-    if (composerReplyAuthor) composerReplyAuthor.textContent = "";
-    if (composerReplyText) composerReplyText.textContent = "";
-    return;
-  }
-
-  if (composerReplyAuthor) {
-    composerReplyAuthor.textContent = pendingReplyMessage.senderName || "Message";
-  }
-  if (composerReplyText) {
-    const renderEmojiAwareTextHtml = getWin().renderEmojiAwareTextHtml;
-    composerReplyText.innerHTML = typeof renderEmojiAwareTextHtml === "function"
-      ? renderEmojiAwareTextHtml(getReplyPreviewCopy(pendingReplyMessage) || "Message")
-      : getReplyPreviewCopy(pendingReplyMessage) || "Message";
-  }
-  composerReplyPreview.classList.add("visible");
-  composerReplyPreview.setAttribute("aria-hidden", "false");
-};
-
 const setPendingReplyMessage = (message: any) => {
   const currentUserId = getWin().currentUserId;
   const currentUserDisplayName = getWin().currentUserDisplayName;
@@ -184,11 +166,6 @@ const closeMessageContextMenuSoon = () => {
   }, 140);
 };
 
-const isMessageDownloadable = (message: any) => Boolean(
-  message?.mediaUrl
-  && (message.type === "image" || message.type === "video" || message.type === "audio")
-);
-
 const resolveDownloadMediaUrl = (rawUrl: string) => {
   const value = String(rawUrl || "").trim();
   if (!value) {
@@ -203,39 +180,69 @@ const resolveDownloadMediaUrl = (rawUrl: string) => {
   return value;
 };
 
-const buildContextMenuButton = (action: string, label: string, icon: string, danger = false) => (
-  '<button class="message-context-menu-item' + (danger ? ' danger' : '') + '" type="button" data-action="' + action + '">' +
-    icon +
-    '<span>' + label + '</span>' +
-  '</button>'
-);
-
-const getLinkOrText = (message: any): string => {
-  if (message.body) {
-    const match = message.body.match(/https?:\/\/[^\s]+/i);
-    if (match) return match[0];
-    return message.body;
-  }
-  if (message.attachmentPath) {
-    const apiBase = getWin().apiBase || "/api";
-    return window.location.origin + apiBase + "/v1/messages/" + encodeURIComponent(message.id) + "/media";
-  }
-  return "";
-};
-
-const getContextMenuActions = (message: any): any[] => {
-  return [
-    {
-      key: "copy_link",
-      label: "Copy Link",
-      icon: typeof getWin().getIcon === "function" ? getWin().getIcon("copy", "", 'aria-hidden="true"') : "",
-      danger: false
+const handleMessageContextMenuAction = (action: string, message: any) => {
+  if (action === "reply") {
+    setPendingReplyMessage(message);
+    const composerInput = document.getElementById("composer-input");
+    if (composerInput) {
+      composerInput.focus();
     }
-  ];
+    closeMessageContextMenu();
+    return;
+  }
+
+  if (action === "edit") {
+    const startEditingMessage = getWin().startEditingMessage;
+    if (typeof startEditingMessage === "function") {
+      startEditingMessage(message);
+    }
+    closeMessageContextMenu();
+    return;
+  }
+
+  if (action === "copy_text") {
+    if (message.body && navigator.clipboard?.writeText) {
+      void navigator.clipboard.writeText(message.body);
+    }
+    closeMessageContextMenuSoon();
+    return;
+  }
+
+  if (action === "copy_link") {
+    const link = getLegacyMessageLinkOrText(message);
+    if (link && navigator.clipboard?.writeText) {
+      void navigator.clipboard.writeText(link);
+    }
+    closeMessageContextMenuSoon();
+    return;
+  }
+
+  if (action === "download") {
+    void downloadMessageMedia(message);
+    closeMessageContextMenuSoon();
+    return;
+  }
+
+  if (action === "pin") {
+    const togglePinMessage = getWin().togglePinMessage;
+    if (typeof togglePinMessage === "function") {
+      togglePinMessage(message);
+    }
+    closeMessageContextMenuSoon();
+    return;
+  }
+
+  if (action === "delete") {
+    openDeleteMessageModal(message);
+    closeMessageContextMenu();
+  }
 };
 
-const openMessageContextMenu = (event: MouseEvent, message: any) => {
-  if (!message) {
+const openMessageContextMenu = (
+  event: MouseEvent | TouchEvent | { clientX?: number; clientY?: number },
+  message: any
+) => {
+  if (!message || !canOpenMessageContextMenu()) {
     return;
   }
 
@@ -245,42 +252,34 @@ const openMessageContextMenu = (event: MouseEvent, message: any) => {
     return;
   }
 
-  const actions = getContextMenuActions(message);
-  messageContextMenuBody.innerHTML = actions
-    .map((action) => buildContextMenuButton(action.key, action.label, action.icon, Boolean(action.danger)))
-    .join("");
+  const actions = getLegacyContextMenuActions(message);
+  renderLegacyMessageContextMenuBody(
+    messageContextMenuBody,
+    actions,
+    (actionKey) => handleMessageContextMenuAction(actionKey, message)
+  );
 
   messageContextMenuState = { message };
-  const menuWidth = 220;
-  const menuHeight = 60;
-  const left = Math.min(window.innerWidth - menuWidth - 12, Math.max(12, event.clientX));
-  const top = Math.min(window.innerHeight - menuHeight - 12, Math.max(12, event.clientY));
+
+  let clientX = (event as any).clientX || 0;
+  let clientY = (event as any).clientY || 0;
+  if ((event as any).touches && (event as any).touches[0]) {
+    clientX = (event as any).touches[0].clientX;
+    clientY = (event as any).touches[0].clientY;
+  }
+
+  const menuWidth = 200;
+  const menuHeight = actions.length * 40 + 20;
+  const left = Math.min(window.innerWidth - menuWidth - 16, Math.max(16, clientX || (window.innerWidth / 2 - menuWidth / 2)));
+  const top = Math.min(window.innerHeight - menuHeight - 16, Math.max(16, clientY || (window.innerHeight / 2 - menuHeight / 2)));
   messageContextMenu.style.left = left + "px";
   messageContextMenu.style.top = top + "px";
   messageContextMenu.classList.add("open");
   messageContextMenu.setAttribute("aria-hidden", "false");
-
-  messageContextMenuBody.querySelectorAll("[data-action]").forEach((button) => {
-    button.addEventListener("click", () => {
-      const action = button.getAttribute("data-action");
-      if (!action) {
-        return;
-      }
-
-      if (action === "copy_link") {
-        const link = getLinkOrText(message);
-        if (link && navigator.clipboard?.writeText) {
-          void navigator.clipboard.writeText(link);
-        }
-        closeMessageContextMenuSoon();
-        return;
-      }
-    });
-  });
 };
 
 const downloadMessageMedia = async (message: any) => {
-  if (!isMessageDownloadable(message)) {
+  if (!isLegacyMessageDownloadable(message)) {
     return;
   }
 
@@ -344,36 +343,21 @@ const closeDeleteMessageModal = () => {
 
 const openDeleteMessageModal = (message: any) => {
   deleteMessageTarget = message;
-  const currentUserId = getWin().currentUserId;
-  const isOwn = message.senderId === currentUserId;
-  const currentPathPublicId = String(window.location.pathname || "")
-    .replace(/^\/+/, "")
-    .split("/")[0];
-  const currentDialogSnapshot = getWin().currentDialogSnapshot;
-  const currentDialogPublicId = getWin().currentDialogPublicId;
-  const isSavedDialog = currentDialogSnapshot?.type === "saved"
-    || currentDialogSnapshot?.publicId === "-1002003143"
-    || currentDialogPublicId === "-1002003143"
-    || currentPathPublicId === "-1002003143"
-    || String(currentDialogSnapshot?.title || "").toLowerCase() === "saved messages";
-  const canDeleteForEveryone = !isSavedDialog && isOwn && !String(message.id || "").startsWith("local_");
-
-  const deleteMessageForEveryoneWrap = document.getElementById("delete-message-for-everyone-wrap");
-  const deleteMessageForEveryone = document.getElementById("delete-message-for-everyone") as HTMLInputElement | null;
-  const deleteMessageForEveryoneLabel = document.getElementById("delete-message-for-everyone-label");
+  const modalState = getLegacyDeleteMessageModalState(message);
+  const shellEl = document.querySelector("#delete-message-modal .delete-message-modal-shell");
   const deleteMessageModal = document.getElementById("delete-message-modal");
 
-  if (deleteMessageForEveryoneWrap) {
-    deleteMessageForEveryoneWrap.hidden = !canDeleteForEveryone;
-    deleteMessageForEveryoneWrap.style.display = canDeleteForEveryone ? "flex" : "none";
+  if (shellEl instanceof HTMLElement) {
+    renderLegacyDeleteMessageModalBody(shellEl, {
+      ...modalState,
+      onCancel: closeDeleteMessageModal,
+      onConfirm: () => {
+        void confirmDeleteMessage();
+      },
+      onDeleteForEveryoneChange: () => {}
+    });
   }
-  if (deleteMessageForEveryone) {
-    deleteMessageForEveryone.disabled = !canDeleteForEveryone;
-    deleteMessageForEveryone.checked = isOwn;
-  }
-  if (deleteMessageForEveryoneLabel) {
-    deleteMessageForEveryoneLabel.textContent = "Also delete for everyone";
-  }
+
   if (deleteMessageModal) {
     deleteMessageModal.classList.add("open");
     deleteMessageModal.setAttribute("aria-hidden", "false");
@@ -494,15 +478,24 @@ const confirmDeleteMessage = async () => {
 };
 
 // Event Listeners setup when DOM is ready
-document.addEventListener("DOMContentLoaded", () => {
+onDomReady(() => {
+  setLegacyComposerReplyPreviewHandlers({
+    onClose: clearPendingReplyMessage
+  });
+
   const composerReplyPreview = document.getElementById("composer-reply-preview");
-  const composerReplyClose = document.getElementById("composer-reply-close");
-  const deleteMessageCancel = document.getElementById("delete-message-cancel");
-  const deleteMessageConfirm = document.getElementById("delete-message-confirm");
   const deleteMessageModal = document.getElementById("delete-message-modal");
   const messageContextMenu = document.getElementById("message-context-menu");
   const messageList = document.getElementById("message-list");
   const composerInput = document.getElementById("composer-input");
+
+  mountLegacyDeleteMessageModalShell(() => ({
+    onCancel: closeDeleteMessageModal,
+    onConfirm: () => {
+      void confirmDeleteMessage();
+    },
+    onDeleteForEveryoneChange: () => {}
+  }));
 
   composerReplyPreview?.addEventListener("click", (event) => {
     if (event.target instanceof Element && event.target.closest("#composer-reply-close")) {
@@ -512,20 +505,6 @@ document.addEventListener("DOMContentLoaded", () => {
     if (pendingReplyMessage?.id) {
       jumpToMessage(pendingReplyMessage.id);
     }
-  });
-
-  composerReplyClose?.addEventListener("click", (event) => {
-    event.preventDefault();
-    event.stopPropagation();
-    clearPendingReplyMessage();
-  });
-
-  deleteMessageCancel?.addEventListener("click", () => {
-    closeDeleteMessageModal();
-  });
-
-  deleteMessageConfirm?.addEventListener("click", () => {
-    void confirmDeleteMessage();
   });
 
   deleteMessageModal?.addEventListener("click", (event) => {
@@ -576,6 +555,109 @@ document.addEventListener("DOMContentLoaded", () => {
   });
 
   if (messageList) {
+    let touchStartX = 0;
+    let touchStartY = 0;
+    let touchActiveMessage: HTMLElement | null = null;
+    let touchActiveBubble: HTMLElement | null = null;
+    let touchSwipeDist = 0;
+    let touchHoldTimer: any = null;
+
+    messageList.addEventListener("touchstart", (e: TouchEvent) => {
+      if (e.touches.length !== 1) return;
+      const target = e.target instanceof Element
+        ? e.target.closest(".message-album-item[data-message-id], .message[data-message-id]")
+        : null;
+      if (!target) return;
+
+      if (e.target instanceof Element && e.target.closest("a, button, .message-reply, .video-player")) {
+        return;
+      }
+
+      touchStartX = e.touches[0].clientX;
+      touchStartY = e.touches[0].clientY;
+      touchActiveMessage = target as HTMLElement;
+      touchActiveBubble = (target.querySelector(".message-bubble") || target) as HTMLElement;
+      touchSwipeDist = 0;
+
+      const messageId = target.getAttribute("data-message-id");
+      if (messageId) {
+        if (touchHoldTimer) window.clearTimeout(touchHoldTimer);
+        touchHoldTimer = window.setTimeout(() => {
+          if (!canOpenMessageContextMenu()) {
+            return;
+          }
+          const message = getCurrentDialogMessageById(messageId);
+          if (message) {
+            openMessageContextMenu({ clientX: touchStartX, clientY: touchStartY }, message);
+          }
+        }, 380);
+      }
+    }, { passive: true });
+
+    messageList.addEventListener("touchmove", (e: TouchEvent) => {
+      if (!touchActiveMessage || !touchActiveBubble || !e.touches[0]) return;
+      const currentX = e.touches[0].clientX;
+      const currentY = e.touches[0].clientY;
+      const deltaX = currentX - touchStartX;
+      const deltaY = currentY - touchStartY;
+
+      if (Math.abs(deltaY) > Math.abs(deltaX) && Math.abs(deltaY) > 8) {
+        if (touchHoldTimer) {
+          window.clearTimeout(touchHoldTimer);
+          touchHoldTimer = null;
+        }
+        if (touchSwipeDist !== 0) {
+          touchActiveBubble.style.transform = "none";
+          touchSwipeDist = 0;
+        }
+        return;
+      }
+
+      if (deltaX < -10) {
+        if (touchHoldTimer) {
+          window.clearTimeout(touchHoldTimer);
+          touchHoldTimer = null;
+        }
+        touchSwipeDist = Math.max(-80, deltaX);
+        touchActiveBubble.style.transform = `translateX(${touchSwipeDist}px) translateZ(0)`;
+      }
+    }, { passive: true });
+
+    const handleTouchEndOrCancel = () => {
+      if (touchHoldTimer) {
+        window.clearTimeout(touchHoldTimer);
+        touchHoldTimer = null;
+      }
+
+      if (touchActiveMessage && touchActiveBubble) {
+        const messageId = touchActiveMessage.getAttribute("data-message-id");
+        if (touchSwipeDist < -35 && messageId && canOpenMessageContextMenu()) {
+          const message = getCurrentDialogMessageById(messageId);
+          if (message) {
+            setPendingReplyMessage(message);
+            if (composerInput) composerInput.focus();
+          }
+        }
+
+        const bubble = touchActiveBubble;
+        bubble.style.transition = "transform 0.25s cubic-bezier(0.175, 0.885, 0.32, 1.275)";
+        bubble.style.transform = "translateX(0) translateZ(0)";
+        window.setTimeout(() => {
+          if (bubble) {
+            bubble.style.transition = "";
+            bubble.style.transform = "";
+          }
+        }, 260);
+      }
+
+      touchActiveMessage = null;
+      touchActiveBubble = null;
+      touchSwipeDist = 0;
+    };
+
+    messageList.addEventListener("touchend", handleTouchEndOrCancel, { passive: true });
+    messageList.addEventListener("touchcancel", handleTouchEndOrCancel, { passive: true });
+
     messageList.addEventListener("contextmenu", (event: any) => {
       const target = event.target instanceof Element
         ? event.target.closest(".message-album-item[data-message-id], .message[data-message-id], .message-system-row[data-message-id]")
@@ -590,13 +672,55 @@ document.addEventListener("DOMContentLoaded", () => {
         return;
       }
 
-      const isSameTargetOpen = Boolean(
-        messageContextMenu?.classList.contains("open") &&
-        messageContextMenuState?.message &&
-        String(messageContextMenuState.message.id) === String(messageId)
-      );
-      if (isSameTargetOpen) {
+      const isContextMenuOpen = Boolean(messageContextMenu?.classList.contains("open"));
+      if (isContextMenuOpen) {
         event.preventDefault();
+        closeMessageContextMenu();
+        return;
+      }
+
+      const message = getCurrentDialogMessageById(messageId);
+      if (!message || !canOpenMessageContextMenu()) {
+        return;
+      }
+
+      event.preventDefault();
+      openMessageContextMenu(event, message);
+    });
+
+    messageList.addEventListener("click", (event) => {
+      const replyNode = event.target instanceof Element ? event.target.closest(".message-reply[data-reply-target-id]") : null;
+      if (replyNode) {
+        const targetId = replyNode.getAttribute("data-reply-target-id");
+        if (targetId) {
+          event.preventDefault();
+          event.stopPropagation();
+          jumpToMessage(targetId);
+        }
+        return;
+      }
+
+      if (event.target instanceof Element && event.target.closest("a, button, audio, video, input, textarea, .message-reply, .message-mention")) {
+        return;
+      }
+
+      const messageTarget = event.target instanceof Element
+        ? event.target.closest(".message-album-item[data-message-id], .message[data-message-id]")
+        : null;
+
+      if (!messageTarget) {
+        return;
+      }
+
+      const messageId = messageTarget.getAttribute("data-message-id");
+      if (!messageId) {
+        return;
+      }
+
+      const isContextMenuOpen = Boolean(messageContextMenu?.classList.contains("open"));
+      if (isContextMenuOpen) {
+        event.preventDefault();
+        event.stopPropagation();
         closeMessageContextMenu();
         return;
       }
@@ -607,47 +731,8 @@ document.addEventListener("DOMContentLoaded", () => {
       }
 
       event.preventDefault();
+      event.stopPropagation();
       openMessageContextMenu(event, message);
-    });
-
-    messageList.addEventListener("click", (event) => {
-      const replyNode = event.target instanceof Element ? event.target.closest(".message-reply[data-reply-target-id]") : null;
-      if (!replyNode) {
-        const messageTarget = event.target instanceof Element
-          ? event.target.closest(".message-album-item[data-message-id], .message[data-message-id], .message-system-row[data-message-id]")
-          : null;
-
-        if (!messageTarget || event.detail < 2) {
-          return;
-        }
-
-        if (event.target instanceof Element && event.target.closest("a, button, .message-reply")) {
-          return;
-        }
-
-        const messageId = messageTarget.getAttribute("data-message-id");
-        if (!messageId) {
-          return;
-        }
-
-        const message = getCurrentDialogMessageById(messageId);
-        if (!message) {
-          return;
-        }
-
-        event.preventDefault();
-        event.stopPropagation();
-        setPendingReplyMessage(message);
-        if (composerInput) composerInput.focus();
-        return;
-      }
-
-      const targetId = replyNode.getAttribute("data-reply-target-id");
-      if (targetId) {
-        event.preventDefault();
-        event.stopPropagation();
-        jumpToMessage(targetId);
-      }
     });
 
     messageList.addEventListener("dblclick", (event) => {

@@ -1,0 +1,83 @@
+.ui-new-chat .workspace-sidebar,
+.ui-new-sidebar .workspace-sidebar {
+  display: none !important;
+}
+
+.ui-new-chat #message-list,
+.ui-new-chat .composer-shell,
+.ui-new-chat #chat-composer,
+.ui-new-chat .chat-window > .composer,
+.ui-new-chat #chat-island,
+.ui-new-chat .chat-island,
+.ui-new-chat .workspace-main > .chat-header {
+  display: none !important;
+}
+
+.ui-new-auth #auth-view,
+.ui-new-auth .auth-bg-canvas {
+  display: none !important;
+}
+
+.ui-new-chat #workspace-view:not(.hidden),
+.ui-new-sidebar #workspace-view:not(.hidden) {
+  display: flex !important;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.ui-new-chat #workspace-view:not(.hidden) .workspace-main,
+.ui-new-sidebar #workspace-view:not(.hidden) .workspace-main {
+  display: flex !important;
+  flex: 1;
+  min-height: 0;
+}
+
+.ui-new-chat #app-root,
+.ui-new-sidebar #app-root,
+.ui-new-auth #app-root {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  width: 100%;
+  position: relative;
+  z-index: 1;
+}
+
+.ui-new-chat #workspace-view:not(.hidden),
+.ui-new-sidebar #workspace-view:not(.hidden),
+.ui-new-auth #workspace-view:not(.hidden) {
+  display: none !important;
+}
+
+.ui-new-chat .tg-app-shell,
+.ui-new-sidebar .tg-app-shell {
+  display: grid;
+  grid-template-columns: minmax(280px, 320px) minmax(0, 1fr);
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  flex: 1;
+}
+
+.ui-new-chat.mobile-chat-open .tg-new-sidebar,
+.ui-new-sidebar.mobile-chat-open .tg-new-sidebar {
+  display: none;
+}
+
+.ui-new-chat.mobile-chat-open .tg-new-chat,
+.ui-new-sidebar.mobile-chat-open .tg-new-chat {
+  display: flex;
+}
+
+@media (max-width: 900px) {
+  .ui-new-chat .tg-app-shell,
+  .ui-new-sidebar .tg-app-shell {
+    grid-template-columns: 1fr;
+    grid-template-rows: auto 1fr;
+  }
+
+  .ui-new-chat:not(.mobile-chat-open) .tg-new-chat,
+  .ui-new-sidebar:not(.mobile-chat-open) .tg-new-chat {
+    display: none;
+  }
+}

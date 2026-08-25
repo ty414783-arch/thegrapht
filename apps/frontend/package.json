@@ -5,7 +5,8 @@
   "type": "module",
   "scripts": {
     "dev": "node --watch src/index.js",
-    "build": "vite build",
+    "i18n:generate": "node ../../scripts/generate-i18n.mjs",
+    "build": "npm run i18n:generate && vite build",
     "check:generated-client": "node ../../scripts/check-generated-client.mjs",
     "test:unit": "node --test ./test/*.test.js",
     "test:smoke": "playwright test",
@@ -18,7 +19,9 @@
     "vite": "^5.2.11"
   },
   "dependencies": {
+    "@thegrapht/thg-protocol": "*",
     "lucide-static": "^1.17.0",
-    "preact": "^10.22.0"
+    "preact": "^10.22.0",
+    "qr-code-styling": "^1.9.2"
   }
 }

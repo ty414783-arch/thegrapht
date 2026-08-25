@@ -2,6 +2,12 @@ import crypto from "node:crypto";
 
 import { config } from "../config.js";
 import { query, queryMany, queryOne } from "../db/client.js";
+import {
+  createInviteToken,
+  isChannelSlugAvailable,
+  normalizeChannelSlug,
+  validateChannelSlugFormat
+} from "./channel-slugs.js";
 
 export const createPublicId = (seed) => {
   const digest = crypto.createHash("sha256").update(seed).digest();
@@ -37,6 +43,7 @@ const dialogProjection = `
     END AS "publicId",
     d.type,
     d.avatar_url AS "avatarUrl",
+    d.avatar_updated_at AS "avatarUpdatedAt",
     d.encryption_mode AS "encryptionMode",
     d.encryption_version AS "encryptionVersion",
     (d.encryption_mode = 'e2e_v1') AS "isSecureSupported",
@@ -73,7 +80,21 @@ const dialogProjection = `
       WHEN d.type = 'group' THEN COALESCE(group_members.members, '[]'::json)
       ELSE NULL
     END AS "groupMembers",
-    COALESCE(unread_counts.unread_count, 0) AS "unreadCount"
+    channel_meta.slug AS "channelSlug",
+    channel_meta.visibility AS "channelVisibility",
+    channel_meta.invite_token AS "channelInviteToken",
+    channel_meta.description AS "channelDescription",
+    group_meta.description AS "groupDescription",
+    CASE
+      WHEN d.type = 'channel' AND self_membership.role IN ('owner', 'admin') THEN TRUE
+      ELSE FALSE
+    END AS "channelCanPost",
+    CASE
+      WHEN d.type = 'channel' THEN TRUE
+      ELSE NULL
+    END AS "channelIsMember",
+    COALESCE(unread_counts.unread_count, 0) AS "unreadCount",
+    COALESCE(message_counts.messages_count, 0) AS "messagesCount"
   FROM dialogs d
   JOIN memberships self_membership ON self_membership.dialog_id = d.id
   LEFT JOIN LATERAL (
@@ -114,6 +135,8 @@ const dialogProjection = `
     WHERE membership.dialog_id = d.id
       AND d.type = 'group'
   ) group_members ON true
+  LEFT JOIN channels channel_meta ON channel_meta.dialog_id = d.id
+  LEFT JOIN groups group_meta ON group_meta.dialog_id = d.id
   LEFT JOIN LATERAL (
     SELECT COUNT(*)::int AS unread_count
     FROM messages unread_message
@@ -128,6 +151,15 @@ const dialogProjection = `
         OR unread_message.created_at > self_membership.last_read_at
       )
   ) unread_counts ON true
+  LEFT JOIN LATERAL (
+    SELECT COUNT(*)::int AS messages_count
+    FROM messages msg_count
+    LEFT JOIN message_deletions msg_deleted
+      ON msg_deleted.message_id = msg_count.id
+     AND msg_deleted.user_id = $1
+    WHERE msg_count.dialog_id = d.id
+      AND msg_deleted.message_id IS NULL
+  ) message_counts ON true
 `;
 
 export const getDialogsForUser = (userId, limit = config.dialogListLimit, executor) =>
@@ -203,7 +235,21 @@ export const getDialogsForUser = (userId, limit = config.dialogListLimit, execut
           ELSE NULL
         END AS "lastMessageSenderKeyId",
         COALESCE(last_message.created_at, d.created_at) AS "lastMessageCreatedAt",
-        COALESCE(unread_counts.unread_count, 0) AS "unreadCount"
+        channel_meta.slug AS "channelSlug",
+        channel_meta.visibility AS "channelVisibility",
+        channel_meta.invite_token AS "channelInviteToken",
+        channel_meta.description AS "channelDescription",
+        group_meta.description AS "groupDescription",
+        CASE
+          WHEN d.type = 'channel' AND self_membership.role IN ('owner', 'admin') THEN TRUE
+          ELSE FALSE
+        END AS "channelCanPost",
+        CASE
+          WHEN d.type = 'channel' THEN TRUE
+          ELSE NULL
+        END AS "channelIsMember",
+        COALESCE(unread_counts.unread_count, 0) AS "unreadCount",
+        COALESCE(message_counts.messages_count, 0) AS "messagesCount"
       FROM memberships self_membership
       JOIN dialogs d ON d.id = self_membership.dialog_id
       LEFT JOIN LATERAL (
@@ -241,6 +287,8 @@ export const getDialogsForUser = (userId, limit = config.dialogListLimit, execut
         ORDER BY msg.created_at DESC, msg.id DESC
         LIMIT 1
       ) last_message ON true
+      LEFT JOIN channels channel_meta ON channel_meta.dialog_id = d.id
+      LEFT JOIN groups group_meta ON group_meta.dialog_id = d.id
       LEFT JOIN LATERAL (
         SELECT COUNT(*)::int AS unread_count
         FROM messages unread_message
@@ -255,6 +303,15 @@ export const getDialogsForUser = (userId, limit = config.dialogListLimit, execut
             OR unread_message.created_at > self_membership.last_read_at
           )
       ) unread_counts ON true
+      LEFT JOIN LATERAL (
+        SELECT COUNT(*)::int AS messages_count
+        FROM messages msg_count
+        LEFT JOIN message_deletions msg_deleted
+          ON msg_deleted.message_id = msg_count.id
+         AND msg_deleted.user_id = $1
+        WHERE msg_count.dialog_id = d.id
+          AND msg_deleted.message_id IS NULL
+      ) message_counts ON true
       WHERE self_membership.user_id = $1
       ORDER BY
         CASE WHEN d.type = 'saved' THEN 0 ELSE 1 END,
@@ -493,7 +550,7 @@ export const createGroupDialog = async (creatorUser, title, memberUserIds = [], 
     await query(
       `
         UPDATE dialogs
-        SET avatar_url = $2
+        SET avatar_url = $2, avatar_updated_at = CURRENT_TIMESTAMP
         WHERE id = $1
       `,
       [dialogId, avatarUrl],
@@ -533,6 +590,388 @@ export const createGroupDialog = async (creatorUser, title, memberUserIds = [], 
   }
 
   return { id: dialogId, publicId };
+};
+
+export const getMembershipRoleForUser = (userId, dialogId, executor) =>
+  queryOne(
+    `
+      SELECT role
+      FROM memberships
+      WHERE user_id = $1
+        AND dialog_id = $2
+      LIMIT 1
+    `,
+    [userId, dialogId],
+    executor
+  ).then((row) => row?.role || null);
+
+export const canUserPostInDialog = async (userId, dialog, executor) => {
+  if (!dialog || dialog.type !== "channel") {
+    return true;
+  }
+
+  const role = dialog.channelCanPost === true
+    ? "owner"
+    : await getMembershipRoleForUser(userId, dialog.id, executor);
+
+  return role === "owner" || role === "admin";
+};
+
+export const getChannelDialogBySlug = (slug, executor) =>
+  queryOne(
+    `
+      SELECT
+        d.id,
+        d.public_id AS "publicId",
+        d.type,
+        c.visibility,
+        c.slug,
+        c.invite_token AS "inviteToken"
+      FROM channels c
+      JOIN dialogs d ON d.id = c.dialog_id
+      WHERE lower(c.slug) = $1
+        AND c.visibility = 'public'
+      LIMIT 1
+    `,
+    [normalizeChannelSlug(slug)],
+    executor
+  );
+
+export const getChannelDialogByInviteToken = (inviteToken, executor) =>
+  queryOne(
+    `
+      SELECT
+        d.id,
+        d.public_id AS "publicId",
+        d.type,
+        c.visibility,
+        c.slug,
+        c.invite_token AS "inviteToken"
+      FROM channels c
+      JOIN dialogs d ON d.id = c.dialog_id
+      WHERE c.invite_token = $1
+      LIMIT 1
+    `,
+    [String(inviteToken || "").trim()],
+    executor
+  );
+
+export const getChannelDialogPreviewByDialogId = (dialogId, executor) =>
+  queryOne(
+    `
+      SELECT
+        d.id,
+        d.public_id AS "publicId",
+        d.type,
+        d.avatar_url AS "avatarUrl",
+        d.avatar_updated_at AS "avatarUpdatedAt",
+        d.title,
+        'Channel' AS subtitle,
+        COALESCE(member_counts.participants, 0) AS participants,
+        channel_meta.slug AS "channelSlug",
+        channel_meta.visibility AS "channelVisibility",
+        channel_meta.invite_token AS "channelInviteToken",
+        channel_meta.description AS "channelDescription",
+        FALSE AS "channelCanPost",
+        FALSE AS "channelIsMember",
+        COALESCE(preview_unread.unread_count, 0) AS "unreadCount",
+        COALESCE(message_counts.messages_count, 0) AS "messagesCount"
+      FROM dialogs d
+      JOIN channels channel_meta ON channel_meta.dialog_id = d.id
+      LEFT JOIN LATERAL (
+        SELECT 0::int AS unread_count
+      ) preview_unread ON true
+      LEFT JOIN LATERAL (
+        SELECT COUNT(*)::int AS participants
+        FROM memberships membership_count
+        WHERE membership_count.dialog_id = d.id
+      ) member_counts ON true
+      LEFT JOIN LATERAL (
+        SELECT COUNT(*)::int AS messages_count
+        FROM messages msg_count
+        WHERE msg_count.dialog_id = d.id
+      ) message_counts ON true
+      WHERE d.id = $1
+        AND d.type = 'channel'
+      LIMIT 1
+    `,
+    [dialogId],
+    executor
+  );
+
+export const getChannelDialogPreviewByPublicId = (publicId, executor) =>
+  queryOne(
+    `
+      SELECT
+        d.id,
+        d.public_id AS "publicId",
+        d.type,
+        d.avatar_url AS "avatarUrl",
+        d.avatar_updated_at AS "avatarUpdatedAt",
+        d.title,
+        'Channel' AS subtitle,
+        COALESCE(member_counts.participants, 0) AS participants,
+        channel_meta.slug AS "channelSlug",
+        channel_meta.visibility AS "channelVisibility",
+        channel_meta.invite_token AS "channelInviteToken",
+        channel_meta.description AS "channelDescription",
+        FALSE AS "channelCanPost",
+        FALSE AS "channelIsMember",
+        COALESCE(preview_unread.unread_count, 0) AS "unreadCount",
+        COALESCE(message_counts.messages_count, 0) AS "messagesCount"
+      FROM dialogs d
+      JOIN channels channel_meta ON channel_meta.dialog_id = d.id
+      LEFT JOIN LATERAL (
+        SELECT 0::int AS unread_count
+      ) preview_unread ON true
+      LEFT JOIN LATERAL (
+        SELECT COUNT(*)::int AS participants
+        FROM memberships membership_count
+        WHERE membership_count.dialog_id = d.id
+      ) member_counts ON true
+      LEFT JOIN LATERAL (
+        SELECT COUNT(*)::int AS messages_count
+        FROM messages msg_count
+        WHERE msg_count.dialog_id = d.id
+      ) message_counts ON true
+      WHERE d.public_id = $1
+        AND d.type = 'channel'
+        AND channel_meta.visibility = 'public'
+      LIMIT 1
+    `,
+    [publicId],
+    executor
+  );
+
+export const resolveChannelDialogForUser = async (userId, { slug, inviteToken }, executor) => {
+  const channelRef = slug
+    ? await getChannelDialogBySlug(slug, executor)
+    : await getChannelDialogByInviteToken(inviteToken, executor);
+
+  if (!channelRef) {
+    return null;
+  }
+
+  if (slug && channelRef.visibility !== "public") {
+    return null;
+  }
+
+  const existingDialog = await getDialogByIdForUser(userId, channelRef.id, executor);
+  if (existingDialog) {
+    return {
+      ...existingDialog,
+      channelIsMember: true
+    };
+  }
+
+  return getChannelDialogPreviewByDialogId(channelRef.id, executor);
+};
+
+export const joinChannelDialog = async (userId, { slug, inviteToken }, executor) => {
+  const channel = slug
+    ? await getChannelDialogBySlug(slug, executor)
+    : await getChannelDialogByInviteToken(inviteToken, executor);
+
+  if (!channel) {
+    return null;
+  }
+
+  if (slug && channel.visibility !== "public") {
+    return null;
+  }
+
+  await query(
+    `
+      INSERT INTO memberships (id, dialog_id, user_id, role)
+      VALUES ($1, $2, $3, 'member')
+      ON CONFLICT (dialog_id, user_id) DO NOTHING
+    `,
+    [`mem_${channel.id}_${userId}`, channel.id, userId],
+    executor
+  );
+
+  const dialog = await getDialogByIdForUser(userId, channel.id, executor);
+  if (!dialog) {
+    return null;
+  }
+
+  return {
+    ...dialog,
+    channelIsMember: true
+  };
+};
+
+export const leaveChannelDialog = async (userId, { slug, inviteToken, publicId }, executor) => {
+  let channel = null;
+
+  if (publicId) {
+    const dialog = await getDialogByPublicIdForUser(userId, publicId, executor);
+    if (dialog?.type === "channel") {
+      channel = { id: dialog.id, publicId: dialog.publicId };
+    }
+  } else {
+    const resolved = slug
+      ? await getChannelDialogBySlug(slug, executor)
+      : await getChannelDialogByInviteToken(inviteToken, executor);
+    if (resolved) {
+      channel = { id: resolved.id, publicId: resolved.publicId };
+    }
+  }
+
+  if (!channel) {
+    return null;
+  }
+
+  const membership = await queryOne(
+    `
+      SELECT role
+      FROM memberships
+      WHERE dialog_id = $1
+        AND user_id = $2
+      LIMIT 1
+    `,
+    [channel.id, userId],
+    executor
+  );
+
+  if (!membership) {
+    return { left: false, publicId: channel.publicId };
+  }
+
+  if (membership.role === "owner") {
+    throw new Error("Channel owner cannot leave.");
+  }
+
+  await query(
+    `
+      DELETE FROM memberships
+      WHERE dialog_id = $1
+        AND user_id = $2
+    `,
+    [channel.id, userId],
+    executor
+  );
+
+  return { left: true, publicId: channel.publicId };
+};
+
+export const searchPublicChannels = ({ query: searchQuery, excludeUserId, limit = 20 }, executor) => {
+  const normalized = String(searchQuery || "").trim().toLowerCase();
+  if (!normalized) {
+    return Promise.resolve([]);
+  }
+
+  return queryMany(
+    `
+      SELECT
+        d.id,
+        d.public_id AS "publicId",
+        d.title,
+        d.avatar_url AS "avatarUrl",
+        c.slug AS "channelSlug",
+        c.description AS "channelDescription",
+        COALESCE(member_counts.participants, 0) AS participants
+      FROM channels c
+      JOIN dialogs d ON d.id = c.dialog_id
+      LEFT JOIN LATERAL (
+        SELECT COUNT(*)::int AS participants
+        FROM memberships membership_count
+        WHERE membership_count.dialog_id = d.id
+      ) member_counts ON true
+      WHERE c.visibility = 'public'
+        AND (
+          lower(c.slug) LIKE $1
+          OR lower(d.title) LIKE $1
+        )
+        AND NOT EXISTS (
+          SELECT 1
+          FROM memberships existing_membership
+          WHERE existing_membership.dialog_id = d.id
+            AND existing_membership.user_id = $2
+        )
+      ORDER BY
+        CASE WHEN lower(c.slug) = $3 THEN 0 ELSE 1 END,
+        d.title ASC
+      LIMIT $4
+    `,
+    [`%${normalized}%`, excludeUserId, normalized, Math.max(1, Math.min(Number(limit) || 20, 50))],
+    executor
+  );
+};
+
+export const createChannelDialog = async (
+  creatorUser,
+  {
+    title,
+    description = "",
+    avatarUrl = null,
+    visibility = "private",
+    slug = null
+  },
+  executor
+) => {
+  const normalizedVisibility = visibility === "public" ? "public" : "private";
+  let normalizedSlug = null;
+
+  if (normalizedVisibility === "public") {
+    const validation = validateChannelSlugFormat(slug);
+    if (!validation.ok) {
+      throw new Error("Link is invalid");
+    }
+
+    const availability = await isChannelSlugAvailable(validation.slug, executor);
+    if (!availability.available) {
+      throw new Error("Link is invalid");
+    }
+
+    normalizedSlug = validation.slug;
+  }
+
+  const inviteToken = createInviteToken();
+  const randomSuffix = crypto.randomBytes(6).toString("hex");
+  const dialogId = `dlg_channel_${Date.now()}_${randomSuffix}`;
+  const publicId = createPublicId(dialogId);
+
+  await query(
+    `
+      INSERT INTO dialogs (id, public_id, type, title, created_by)
+      VALUES ($1, $2, 'channel', $3, $4)
+    `,
+    [dialogId, publicId, title, creatorUser.id],
+    executor
+  );
+
+  if (avatarUrl) {
+    await query(
+      `
+        UPDATE dialogs
+        SET avatar_url = $2, avatar_updated_at = CURRENT_TIMESTAMP
+        WHERE id = $1
+      `,
+      [dialogId, avatarUrl],
+      executor
+    );
+  }
+
+  await query(
+    `
+      INSERT INTO channels (dialog_id, description, visibility, slug, invite_token)
+      VALUES ($1, $2, $3, $4, $5)
+    `,
+    [dialogId, String(description || ""), normalizedVisibility, normalizedSlug, inviteToken],
+    executor
+  );
+
+  await query(
+    `
+      INSERT INTO memberships (id, dialog_id, user_id, role)
+      VALUES ($1, $2, $3, 'owner')
+    `,
+    [`mem_${dialogId}_${creatorUser.id}`, dialogId, creatorUser.id],
+    executor
+  );
+
+  return { id: dialogId, publicId, slug: normalizedSlug, inviteToken, visibility: normalizedVisibility };
 };
 
 export const getSecureDialogBootstrapForUser = (userId, publicId, executor) =>
